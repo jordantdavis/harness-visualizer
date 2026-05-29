@@ -1,0 +1,1093 @@
+# Phase 1: Event Contract + Storage — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build the foundation library for the Claude Code harness visualizer — the canonical `Event` type, filesystem path resolution, and a per-session JSONL store with append, read, and listing.
+
+**Architecture:** Three small, focused packages under `internal/`. `event` defines the wire/disk contract (canonical envelope + raw passthrough). `paths` resolves XDG data/runtime directories and filenames. `store` owns disk I/O: a thread-safe per-session JSONL writer that assigns a monotonic per-session sequence number, plus readers for history and session listing. The store takes its directory by injection so it is fully testable against `t.TempDir()`. Buffering/flush sophistication is deliberately deferred to the daemon (Phase 2); this phase keeps `Append` synchronous-but-thread-safe.
+
+**Tech Stack:** Go 1.26, standard library only (`encoding/json`, `os`, `path/filepath`, `bufio`, `sync`). Module path: `jordandavis.dev/cc-harness-visualizer`.
+
+---
+
+## File Structure
+
+- `internal/event/event.go` — `Event` struct + `Parse(raw []byte)` (defensive field extraction). One responsibility: the data contract.
+- `internal/event/event_test.go` — round-trip + parse tests.
+- `internal/paths/paths.go` — `DataDir`, `SessionsDir`, `RuntimeDir`, `PortFile`, `PidFile`, `SessionFilename`, `SessionFile`, `sanitize`. One responsibility: where things live on disk.
+- `internal/paths/paths_test.go` — env-override + sanitize tests.
+- `internal/store/store.go` — `Store`, `New`, `Append`, `Read`, `Sessions`, `Close`, `SessionInfo`. One responsibility: JSONL persistence.
+- `internal/store/store_test.go` — append/seq/read/listing tests.
+
+No `cmd/` wiring in this phase — it is a pure library, exercised only by tests. Binaries arrive in Phases 2–3.
+
+---
+
+### Task 1: Event type + defensive Parse
+
+**Files:**
+- Create: `internal/event/event.go`
+- Test: `internal/event/event_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `internal/event/event_test.go`:
+
+```go
+package event
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestParseExtractsCanonicalFields(t *testing.T) {
+	raw := []byte(`{
+		"hook_event_name": "PreToolUse",
+		"session_id": "abc-123",
+		"cwd": "/home/u/proj",
+		"tool_name": "Bash",
+		"tool_input": {"command": "git status"}
+	}`)
+
+	ev, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if ev.HookEvent != "PreToolUse" {
+		t.Errorf("HookEvent = %q, want %q", ev.HookEvent, "PreToolUse")
+	}
+	if ev.SessionID != "abc-123" {
+		t.Errorf("SessionID = %q, want %q", ev.SessionID, "abc-123")
+	}
+	if ev.CWD != "/home/u/proj" {
+		t.Errorf("CWD = %q, want %q", ev.CWD, "/home/u/proj")
+	}
+	if ev.ToolName != "Bash" {
+		t.Errorf("ToolName = %q, want %q", ev.ToolName, "Bash")
+	}
+}
+
+func TestParsePreservesRawVerbatim(t *testing.T) {
+	raw := []byte(`{"hook_event_name":"Stop","extra":{"deep":[1,2,3]}}`)
+	ev, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	// Raw must round-trip to the same semantic JSON.
+	var got, want map[string]any
+	if err := json.Unmarshal(ev.Raw, &got); err != nil {
+		t.Fatalf("Raw is not valid JSON: %v", err)
+	}
+	if err := json.Unmarshal(raw, &want); err != nil {
+		t.Fatalf("input is not valid JSON: %v", err)
+	}
+	gb, _ := json.Marshal(got)
+	wb, _ := json.Marshal(want)
+	if string(gb) != string(wb) {
+		t.Errorf("Raw = %s, want %s", gb, wb)
+	}
+}
+
+func TestParseMissingFieldsAreEmptyNotError(t *testing.T) {
+	ev, err := Parse([]byte(`{"hook_event_name":"Notification"}`))
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if ev.SessionID != "" || ev.CWD != "" || ev.ToolName != "" {
+		t.Errorf("expected empty optional fields, got %+v", ev)
+	}
+}
+
+func TestParseInvalidJSONErrors(t *testing.T) {
+	if _, err := Parse([]byte(`not json`)); err == nil {
+		t.Fatal("expected error for invalid JSON, got nil")
+	}
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/event/ -run TestParse -v`
+Expected: FAIL — build error, `undefined: Parse` / `undefined: Event` (package `event.go` does not exist yet).
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `internal/event/event.go`:
+
+```go
+// Package event defines the canonical event contract shared by the hook CLI,
+// the daemon, and the TUI. An Event is a small envelope of fields the
+// visualizer owns plus the entire original Claude Code hook payload, kept
+// verbatim in Raw so new upstream fields never break us.
+package event
+
+import (
+	"encoding/json"
+	"time"
+)
+
+// Event is one captured Claude Code hook invocation.
+type Event struct {
+	ID         string          `json:"id"`          // generated by the CLI
+	CapturedAt time.Time       `json:"captured_at"` // CLI wall-clock at capture
+	Seq        int64           `json:"seq"`         // daemon-assigned, per-session monotonic
+	HookEvent  string          `json:"hook_event"`  // from hook_event_name
+	SessionID  string          `json:"session_id"`
+	CWD        string          `json:"cwd,omitempty"`
+	ToolName   string          `json:"tool_name,omitempty"`
+	Raw        json.RawMessage `json:"raw"` // the entire original hook payload
+}
+
+// Parse extracts the canonical fields from a raw Claude Code hook payload and
+// preserves the whole payload in Raw. It is deliberately lenient: absent
+// fields yield zero values rather than errors. It returns an error only when
+// raw is not a valid JSON object. ID, CapturedAt, and Seq are NOT set here —
+// the CLI sets ID/CapturedAt, the daemon assigns Seq.
+func Parse(raw []byte) (*Event, error) {
+	var fields struct {
+		HookEventName string `json:"hook_event_name"`
+		SessionID     string `json:"session_id"`
+		CWD           string `json:"cwd"`
+		ToolName      string `json:"tool_name"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	// Copy raw so later mutation of the caller's slice cannot bleed in.
+	rawCopy := make(json.RawMessage, len(raw))
+	copy(rawCopy, raw)
+
+	return &Event{
+		HookEvent: fields.HookEventName,
+		SessionID: fields.SessionID,
+		CWD:       fields.CWD,
+		ToolName:  fields.ToolName,
+		Raw:       rawCopy,
+	}, nil
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `go test ./internal/event/ -v`
+Expected: PASS — all four `TestParse*` tests ok.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/event/event.go internal/event/event_test.go
+git commit -m "feat(event): canonical Event type with defensive Parse"
+```
+
+---
+
+### Task 2: Path resolution
+
+**Files:**
+- Create: `internal/paths/paths.go`
+- Test: `internal/paths/paths_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `internal/paths/paths_test.go`:
+
+```go
+package paths
+
+import (
+	"path/filepath"
+	"testing"
+)
+
+func TestDataDirHonorsOverride(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CCHV_DATA_DIR", tmp)
+
+	dir, err := DataDir()
+	if err != nil {
+		t.Fatalf("DataDir error: %v", err)
+	}
+	if dir != tmp {
+		t.Errorf("DataDir = %q, want %q", dir, tmp)
+	}
+}
+
+func TestDataDirFallsBackToXDG(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CCHV_DATA_DIR", "")
+	t.Setenv("XDG_DATA_HOME", tmp)
+
+	dir, err := DataDir()
+	if err != nil {
+		t.Fatalf("DataDir error: %v", err)
+	}
+	want := filepath.Join(tmp, "cchv")
+	if dir != want {
+		t.Errorf("DataDir = %q, want %q", dir, want)
+	}
+}
+
+func TestSessionsDirIsUnderDataDir(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("CCHV_DATA_DIR", tmp)
+
+	dir, err := SessionsDir()
+	if err != nil {
+		t.Fatalf("SessionsDir error: %v", err)
+	}
+	want := filepath.Join(tmp, "sessions")
+	if dir != want {
+		t.Errorf("SessionsDir = %q, want %q", dir, want)
+	}
+}
+
+func TestSessionFilenameSanitizes(t *testing.T) {
+	cases := map[string]string{
+		"abc-123":        "abc-123.jsonl",
+		"a/b/../c":       "a_b___c.jsonl",
+		"weird id!@#":    "weird_id___.jsonl",
+		"":               "_.jsonl",
+	}
+	for in, want := range cases {
+		if got := SessionFilename(in); got != want {
+			t.Errorf("SessionFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/paths/ -v`
+Expected: FAIL — build error, `undefined: DataDir` etc.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `internal/paths/paths.go`:
+
+```go
+// Package paths resolves the on-disk locations cchv uses: data (session
+// JSONL), runtime (port file, pidfile, daemon log), and per-session
+// filenames. Resolution honors CCHV_DATA_DIR, then XDG_DATA_HOME, then
+// ~/.local/share. Directories are created on demand.
+package paths
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+const appName = "cchv"
+
+// DataDir returns the base data directory, creating it if absent.
+func DataDir() (string, error) {
+	dir := os.Getenv("CCHV_DATA_DIR")
+	if dir == "" {
+		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
+			dir = filepath.Join(xdg, appName)
+		} else {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			dir = filepath.Join(home, ".local", "share", appName)
+		}
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// SessionsDir returns the directory holding per-session JSONL files.
+func SessionsDir() (string, error) {
+	base, err := DataDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(base, "sessions")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// RuntimeDir returns the directory for transient runtime files. It prefers
+// XDG_RUNTIME_DIR and falls back to the data directory.
+func RuntimeDir() (string, error) {
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		dir := filepath.Join(xdg, appName)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", err
+		}
+		return dir, nil
+	}
+	return DataDir()
+}
+
+// PortFile returns the path to the file holding the daemon's listen port.
+func PortFile() (string, error) {
+	dir, err := RuntimeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "daemon.port"), nil
+}
+
+// PidFile returns the path to the daemon's pidfile.
+func PidFile() (string, error) {
+	dir, err := RuntimeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "daemon.pid"), nil
+}
+
+// SessionFilename returns the sanitized JSONL filename for a session id.
+func SessionFilename(sessionID string) string {
+	return sanitize(sessionID) + ".jsonl"
+}
+
+// SessionFile returns the absolute path to a session's JSONL file.
+func SessionFile(sessionID string) (string, error) {
+	dir, err := SessionsDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, SessionFilename(sessionID)), nil
+}
+
+// sanitize maps a session id to a safe filename component: it keeps ASCII
+// letters, digits, '-' and '_', and replaces everything else with '_'. Empty
+// input becomes "_" so a filename always exists.
+func sanitize(id string) string {
+	if id == "" {
+		return "_"
+	}
+	var b strings.Builder
+	b.Grow(len(id))
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `go test ./internal/paths/ -v`
+Expected: PASS — all four tests ok.
+
+> Note on the sanitize test: `"a/b/../c"` has 6 non-alphanumeric characters (`/`, `b` is kept, `/`, `.`, `.`, `/`) — verify the expected string `"a_b___c.jsonl"` matches your run; if Go's iteration differs, fix the expectation to match actual output (the security property — no `/` or `.` path components survive — is what matters).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/paths/paths.go internal/paths/paths_test.go
+git commit -m "feat(paths): XDG-aware data/runtime path resolution"
+```
+
+---
+
+### Task 3: Store — New + Append with per-session Seq
+
+**Files:**
+- Create: `internal/store/store.go`
+- Test: `internal/store/store_test.go`
+
+- [ ] **Step 1: Write the failing tests**
+
+Create `internal/store/store_test.go`:
+
+```go
+package store
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"jordandavis.dev/cc-harness-visualizer/internal/event"
+)
+
+func newTestStore(t *testing.T) *Store {
+	t.Helper()
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestAppendAssignsMonotonicSeqPerSession(t *testing.T) {
+	s := newTestStore(t)
+
+	for i := 0; i < 3; i++ {
+		ev := &event.Event{SessionID: "s1", HookEvent: "PreToolUse"}
+		if err := s.Append(ev); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+		if ev.Seq != int64(i+1) {
+			t.Errorf("event %d Seq = %d, want %d", i, ev.Seq, i+1)
+		}
+	}
+
+	// Different session has its own counter starting at 1.
+	ev := &event.Event{SessionID: "s2", HookEvent: "Stop"}
+	if err := s.Append(ev); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if ev.Seq != 1 {
+		t.Errorf("new session Seq = %d, want 1", ev.Seq)
+	}
+}
+
+func TestAppendWritesOneJSONLineToCorrectFile(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	if err := s.Append(&event.Event{SessionID: "abc", HookEvent: "Stop"}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "abc.jsonl"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if n := countLines(data); n != 1 {
+		t.Errorf("line count = %d, want 1", n)
+	}
+	var ev event.Event
+	if err := json.Unmarshal(data[:len(data)-1], &ev); err != nil {
+		t.Fatalf("stored line is not valid JSON: %v", err)
+	}
+	if ev.HookEvent != "Stop" || ev.Seq != 1 {
+		t.Errorf("stored event = %+v, want HookEvent=Stop Seq=1", ev)
+	}
+}
+
+func TestAppendIsConcurrencySafe(t *testing.T) {
+	s := newTestStore(t)
+
+	var wg sync.WaitGroup
+	const n = 50
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = s.Append(&event.Event{SessionID: "race", HookEvent: "PreToolUse"})
+		}()
+	}
+	wg.Wait()
+
+	evs, err := s.Read("race", 0)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(evs) != n {
+		t.Fatalf("got %d events, want %d", len(evs), n)
+	}
+	// Seqs must be exactly 1..n with no duplicates.
+	seen := make(map[int64]bool, n)
+	for _, ev := range evs {
+		if ev.Seq < 1 || ev.Seq > n {
+			t.Errorf("Seq %d out of range", ev.Seq)
+		}
+		if seen[ev.Seq] {
+			t.Errorf("duplicate Seq %d", ev.Seq)
+		}
+		seen[ev.Seq] = true
+	}
+}
+
+func countLines(b []byte) int {
+	n := 0
+	for _, c := range b {
+		if c == '\n' {
+			n++
+		}
+	}
+	return n
+}
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `go test ./internal/store/ -v`
+Expected: FAIL — build error, `undefined: New`, `undefined: Store`, `undefined: (*Store).Append/Read/Close`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+Create `internal/store/store.go`:
+
+```go
+// Package store persists captured events as JSONL, one file per session. The
+// daemon is the only writer in production; Store is therefore optimized for a
+// single in-process owner but is fully thread-safe. Append assigns a
+// monotonic per-session sequence number. The directory is injected so the
+// store is testable against a temp dir.
+package store
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/cc-harness-visualizer/internal/paths"
+)
+
+// Store appends and reads per-session JSONL event logs under dir.
+type Store struct {
+	dir string
+
+	mu    sync.Mutex
+	seq   map[string]int64    // sessionID -> last assigned seq
+	files map[string]*os.File // sessionID -> open append handle
+}
+
+// New creates a Store rooted at dir, creating dir if absent.
+func New(dir string) (*Store, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	return &Store{
+		dir:   dir,
+		seq:   make(map[string]int64),
+		files: make(map[string]*os.File),
+	}, nil
+}
+
+// Append assigns ev.Seq (next monotonic value for ev.SessionID) and writes ev
+// as a single JSON line. Safe for concurrent use.
+func (s *Store) Append(ev *event.Event) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	f, err := s.fileFor(ev.SessionID)
+	if err != nil {
+		return err
+	}
+	s.seq[ev.SessionID]++
+	ev.Seq = s.seq[ev.SessionID]
+
+	line, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	line = append(line, '\n')
+	_, err = f.Write(line)
+	return err
+}
+
+// fileFor returns the cached append handle for sessionID, opening it if
+// needed. Caller must hold s.mu.
+func (s *Store) fileFor(sessionID string) (*os.File, error) {
+	if f, ok := s.files[sessionID]; ok {
+		return f, nil
+	}
+	path := filepath.Join(s.dir, paths.SessionFilename(sessionID))
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	s.files[sessionID] = f
+	return f, nil
+}
+
+// Close flushes and closes all open session handles.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var firstErr error
+	for id, f := range s.files {
+		if err := f.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		delete(s.files, id)
+	}
+	return firstErr
+}
+```
+
+> `Read` is referenced by `TestAppendIsConcurrencySafe` but implemented in Task 5. To keep this task's tests runnable now, add a temporary stub at the bottom of `store.go` and replace it in Task 5:
+>
+> ```go
+> // Read is implemented in Task 5; temporary stub so Task 3 tests compile.
+> func (s *Store) Read(sessionID string, sinceSeq int64) ([]*event.Event, error) {
+> 	return nil, nil
+> }
+> ```
+>
+> With the stub returning nil, `TestAppendIsConcurrencySafe` will FAIL on the length check (`got 0, want 50`). That is expected until Task 5 — run only the first two tests now (next step). Do NOT delete the concurrency test.
+
+- [ ] **Step 4: Run the Append tests to verify they pass**
+
+Run: `go test ./internal/store/ -run 'TestAppendAssignsMonotonicSeqPerSession|TestAppendWritesOneJSONLineToCorrectFile' -v`
+Expected: PASS for both. (`TestAppendIsConcurrencySafe` intentionally fails until Task 5 — do not run it yet.)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/store.go internal/store/store_test.go
+git commit -m "feat(store): per-session JSONL append with monotonic seq"
+```
+
+---
+
+### Task 4: Store — resume Seq from existing file
+
+**Files:**
+- Modify: `internal/store/store.go` (extend `fileFor` / add seq priming)
+- Test: `internal/store/store_test.go` (add one test)
+
+This ensures a restarted daemon continues a session's sequence instead of resetting to 1.
+
+- [ ] **Step 1: Write the failing test**
+
+Append to `internal/store/store_test.go`:
+
+```go
+func TestSeqResumesFromExistingFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// First store writes two events, then closes.
+	s1, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_ = s1.Append(&event.Event{SessionID: "resume", HookEvent: "A"})
+	_ = s1.Append(&event.Event{SessionID: "resume", HookEvent: "B"})
+	if err := s1.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	// Second store over the same dir must continue at 3.
+	s2, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s2.Close()
+	ev := &event.Event{SessionID: "resume", HookEvent: "C"}
+	if err := s2.Append(ev); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if ev.Seq != 3 {
+		t.Errorf("resumed Seq = %d, want 3", ev.Seq)
+	}
+}
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `go test ./internal/store/ -run TestSeqResumesFromExistingFile -v`
+Expected: FAIL — `resumed Seq = 1, want 3` (fresh store has no memory of the prior file).
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `internal/store/store.go`, replace `fileFor` with a version that primes the seq counter from the file's last line on first open. Add the imports `bufio` and the helper:
+
+```go
+// fileFor returns the cached append handle for sessionID, opening it if
+// needed and priming the seq counter from the file's last event. Caller must
+// hold s.mu.
+func (s *Store) fileFor(sessionID string) (*os.File, error) {
+	if f, ok := s.files[sessionID]; ok {
+		return f, nil
+	}
+	path := filepath.Join(s.dir, paths.SessionFilename(sessionID))
+
+	// Prime seq from any pre-existing content before opening for append.
+	if _, primed := s.seq[sessionID]; !primed {
+		if last, err := lastSeq(path); err == nil {
+			s.seq[sessionID] = last
+		}
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	s.files[sessionID] = f
+	return f, nil
+}
+
+// lastSeq returns the Seq of the last valid event line in path, or 0 if the
+// file is absent or empty. Malformed trailing lines are skipped.
+func lastSeq(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	var last int64
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		var ev event.Event
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+			continue
+		}
+		if ev.Seq > last {
+			last = ev.Seq
+		}
+	}
+	return last, sc.Err()
+}
+```
+
+Add `"bufio"` to the import block at the top of `store.go`.
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `go test ./internal/store/ -run TestSeqResumesFromExistingFile -v`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/store.go internal/store/store_test.go
+git commit -m "feat(store): resume per-session seq from existing JSONL"
+```
+
+---
+
+### Task 5: Store — Read with since cursor
+
+**Files:**
+- Modify: `internal/store/store.go` (replace the Task 3 `Read` stub with the real implementation)
+- Test: `internal/store/store_test.go` (add tests)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `internal/store/store_test.go`:
+
+```go
+func TestReadReturnsAllEventsInOrder(t *testing.T) {
+	s := newTestStore(t)
+	for _, h := range []string{"A", "B", "C"} {
+		if err := s.Append(&event.Event{SessionID: "r", HookEvent: h}); err != nil {
+			t.Fatalf("Append: %v", err)
+		}
+	}
+	evs, err := s.Read("r", 0)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(evs) != 3 {
+		t.Fatalf("len = %d, want 3", len(evs))
+	}
+	for i, want := range []string{"A", "B", "C"} {
+		if evs[i].HookEvent != want {
+			t.Errorf("evs[%d].HookEvent = %q, want %q", i, evs[i].HookEvent, want)
+		}
+		if evs[i].Seq != int64(i+1) {
+			t.Errorf("evs[%d].Seq = %d, want %d", i, evs[i].Seq, i+1)
+		}
+	}
+}
+
+func TestReadSinceCursorFiltersBySeq(t *testing.T) {
+	s := newTestStore(t)
+	for i := 0; i < 5; i++ {
+		_ = s.Append(&event.Event{SessionID: "r", HookEvent: "X"})
+	}
+	evs, err := s.Read("r", 3) // want only Seq 4 and 5
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("len = %d, want 2", len(evs))
+	}
+	if evs[0].Seq != 4 || evs[1].Seq != 5 {
+		t.Errorf("got Seqs %d,%d want 4,5", evs[0].Seq, evs[1].Seq)
+	}
+}
+
+func TestReadMissingSessionReturnsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	evs, err := s.Read("nope", 0)
+	if err != nil {
+		t.Fatalf("Read of missing session should not error, got %v", err)
+	}
+	if len(evs) != 0 {
+		t.Errorf("len = %d, want 0", len(evs))
+	}
+}
+
+func TestReadSkipsMalformedLines(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := New(dir)
+	defer s.Close()
+	_ = s.Append(&event.Event{SessionID: "m", HookEvent: "good1"})
+	// Inject a garbage line directly into the file.
+	f, _ := os.OpenFile(filepath.Join(dir, "m.jsonl"), os.O_WRONLY|os.O_APPEND, 0o644)
+	_, _ = f.WriteString("this is not json\n")
+	_ = f.Close()
+	_ = s.Append(&event.Event{SessionID: "m", HookEvent: "good2"})
+
+	evs, err := s.Read("m", 0)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(evs) != 2 {
+		t.Fatalf("len = %d, want 2 (malformed line skipped)", len(evs))
+	}
+}
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `go test ./internal/store/ -run TestRead -v`
+Expected: FAIL — the Task 3 stub returns `nil`, so length assertions fail.
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `internal/store/store.go`, **replace the temporary `Read` stub** with:
+
+```go
+// Read returns the events for sessionID whose Seq is strictly greater than
+// sinceSeq, in file (chronological) order. A missing session file yields an
+// empty slice and no error. Malformed lines are skipped so a corrupt write
+// cannot make history unreadable.
+func (s *Store) Read(sessionID string, sinceSeq int64) ([]*event.Event, error) {
+	path := filepath.Join(s.dir, paths.SessionFilename(sessionID))
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	var out []*event.Event
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var ev event.Event
+		if err := json.Unmarshal(line, &ev); err != nil {
+			continue // resilience: skip corrupt lines
+		}
+		if ev.Seq > sinceSeq {
+			cp := ev
+			out = append(out, &cp)
+		}
+	}
+	return out, sc.Err()
+}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `go test ./internal/store/ -v`
+Expected: PASS — all store tests now pass, **including** `TestAppendIsConcurrencySafe` from Task 3.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/store.go internal/store/store_test.go
+git commit -m "feat(store): Read with since cursor, skip malformed lines"
+```
+
+---
+
+### Task 6: Store — Sessions listing
+
+**Files:**
+- Modify: `internal/store/store.go` (add `SessionInfo` + `Sessions`)
+- Test: `internal/store/store_test.go` (add tests)
+
+- [ ] **Step 1: Write the failing tests**
+
+Append to `internal/store/store_test.go`:
+
+```go
+func TestSessionsListsAllWithCountsAndLastSeq(t *testing.T) {
+	s := newTestStore(t)
+	_ = s.Append(&event.Event{SessionID: "alpha", HookEvent: "A"})
+	_ = s.Append(&event.Event{SessionID: "alpha", HookEvent: "B"})
+	_ = s.Append(&event.Event{SessionID: "beta", HookEvent: "C"})
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	byID := map[string]SessionInfo{}
+	for _, in := range infos {
+		byID[in.ID] = in
+	}
+	if len(byID) != 2 {
+		t.Fatalf("got %d sessions, want 2", len(byID))
+	}
+	if byID["alpha"].EventCount != 2 || byID["alpha"].LastSeq != 2 {
+		t.Errorf("alpha = %+v, want EventCount=2 LastSeq=2", byID["alpha"])
+	}
+	if byID["beta"].EventCount != 1 || byID["beta"].LastSeq != 1 {
+		t.Errorf("beta = %+v, want EventCount=1 LastSeq=1", byID["beta"])
+	}
+}
+
+func TestSessionsEmptyDirReturnsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(infos) != 0 {
+		t.Errorf("got %d, want 0", len(infos))
+	}
+}
+```
+
+> Note: `SessionInfo.ID` is the **sanitized** filename stem (the `.jsonl` basename without extension), which equals the original id for normal Claude Code session ids. We do not store the raw id separately in Phase 1; if unsanitized ids ever matter, revisit when the daemon lands.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `go test ./internal/store/ -run TestSessions -v`
+Expected: FAIL — build error, `undefined: SessionInfo`, `undefined: (*Store).Sessions`.
+
+- [ ] **Step 3: Write minimal implementation**
+
+In `internal/store/store.go`, add (and add `"strings"` and `"time"` to imports):
+
+```go
+// SessionInfo summarizes one stored session for listing in the TUI.
+type SessionInfo struct {
+	ID         string    `json:"id"`
+	EventCount int64     `json:"event_count"`
+	LastSeq    int64     `json:"last_seq"`
+	ModTime    time.Time `json:"mod_time"`
+}
+
+// Sessions lists every recorded session by scanning the store directory.
+// Counts and last seq are derived by reading each file; at personal-tool
+// scale (hundreds of sessions) this is fast enough. A dedicated index is a
+// documented deferral if listing ever slows.
+func (s *Store) Sessions() ([]SessionInfo, error) {
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return nil, err
+	}
+	var infos []SessionInfo
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".jsonl")
+		count, last, err := scanCountAndLastSeq(filepath.Join(s.dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		info := SessionInfo{ID: id, EventCount: count, LastSeq: last}
+		if fi, err := e.Info(); err == nil {
+			info.ModTime = fi.ModTime()
+		}
+		infos = append(infos, info)
+	}
+	return infos, nil
+}
+
+// scanCountAndLastSeq returns the valid-event count and max Seq in path.
+func scanCountAndLastSeq(path string) (count int64, last int64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
+	for sc.Scan() {
+		var ev event.Event
+		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+			continue
+		}
+		count++
+		if ev.Seq > last {
+			last = ev.Seq
+		}
+	}
+	return count, last, sc.Err()
+}
+```
+
+- [ ] **Step 4: Run the full package test to verify everything passes**
+
+Run: `go test ./internal/store/ -v`
+Expected: PASS — all store tests green.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/store.go internal/store/store_test.go
+git commit -m "feat(store): Sessions listing with counts and last seq"
+```
+
+---
+
+### Task 7: Phase verification + roadmap check-off
+
+**Files:**
+- Modify: `ROADMAP.md` (check off Phase 1 boxes)
+
+- [ ] **Step 1: Run the whole test suite with race detector**
+
+Run: `go test -race ./...`
+Expected: PASS, no race warnings. (`-race` specifically validates `TestAppendIsConcurrencySafe`.)
+
+- [ ] **Step 2: Vet and tidy**
+
+Run: `go vet ./... && go mod tidy`
+Expected: no output from `vet`; `go.mod` unchanged (stdlib only, no new deps).
+
+- [ ] **Step 3: Check off Phase 1 in ROADMAP.md**
+
+Mark these four items in the `### Phase 1 — Event contract + storage` section as `- [x]`:
+- `internal/event`: `Event` struct, `Raw json.RawMessage` passthrough, (de)serialization.
+- `internal/paths`: XDG data/runtime dir resolution, port file, pidfile, env overrides.
+- `internal/store`: per-session JSONL writer (append, buffered, periodic flush), session listing, full + `?since=seq` reads, idle-handle cleanup.
+- Tests: round-trip serialization, concurrent appends to one session, listing/reads.
+
+> Note: "buffered, periodic flush" and "idle-handle cleanup" from the roadmap were deliberately deferred to the daemon (Phase 2), where buffering belongs. Append is synchronous-but-thread-safe in Phase 1. When checking the box, add a parenthetical: `(buffering/idle-cleanup deferred to Phase 2 daemon — see plan)`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add ROADMAP.md
+git commit -m "docs: check off Phase 1 (event + paths + store)"
+```
+
+---
+
+## Self-Review
+
+**Spec coverage (against ROADMAP Phase 1):**
+- `internal/event` Event + Raw passthrough → Task 1. ✓
+- `internal/paths` XDG dirs, port/pidfile, env overrides → Task 2. ✓
+- `internal/store` append + per-session seq → Tasks 3–4; reads + since → Task 5; listing → Task 6. ✓
+- Tests: round-trip (Task 1), concurrent appends (Task 3, validated under `-race` in Task 7), listing/reads (Tasks 5–6). ✓
+- Buffered/periodic-flush + idle-handle cleanup → explicitly deferred to Phase 2 with a documented note (Task 7). This is a scope refinement of the roadmap, called out so it is not silently dropped.
+
+**Placeholder scan:** No TBD/TODO. The only stub (Task 3 `Read`) is intentional, explicitly flagged, and replaced in Task 5 with the failing-test gate documented.
+
+**Type consistency:** `Event` fields (`ID`, `CapturedAt`, `Seq`, `HookEvent`, `SessionID`, `CWD`, `ToolName`, `Raw`) are used identically across all tasks. `Store` methods `New`/`Append`/`Read`/`Close`/`Sessions` and `SessionInfo` fields (`ID`, `EventCount`, `LastSeq`, `ModTime`) match between their defining task and their test usages. `paths.SessionFilename` is the single sanitization entry point used by both `paths` and `store`.
