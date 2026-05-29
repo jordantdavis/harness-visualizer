@@ -184,6 +184,10 @@ func (m *model) isLive(id string) bool {
 // liveStatusText renders the heartbeat segment for the status bar: a rate while
 // events flow, "idle Ns" when quiet, or "" when the stream is down (the
 // disconnect banner covers that case).
+//
+// When reducedMotion is set the animated ▮ block character is replaced with a
+// static ">" indicator so the textual rate/idle info is preserved without
+// any blinking.
 func (m *model) liveStatusText() string {
 	if !m.streamUp {
 		return ""
@@ -195,6 +199,10 @@ func (m *model) liveStatusText() string {
 	silent := now.Sub(m.lastEventAt)
 	if silent >= idleAfter {
 		return fmt.Sprintf("live · idle %ds", int(silent.Seconds()))
+	}
+	if m.reducedMotion {
+		// Static indicator: no blinking/animated characters.
+		return fmt.Sprintf("live · > %.0f/s", m.eventsPerSec(now))
 	}
 	return fmt.Sprintf("live · ▮ %.0f/s", m.eventsPerSec(now))
 }

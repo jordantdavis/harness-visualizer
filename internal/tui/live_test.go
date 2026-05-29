@@ -26,7 +26,7 @@ func liveEv(seq int64, session, hook string) *event.Event {
 // liveModel returns a model with one selected session of two events, following.
 func liveModel() model {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = []store.SessionInfo{
 		{ID: "sess-1", EventCount: 2, LastSeq: 2},
 		{ID: "sess-2", EventCount: 0, LastSeq: 0},
@@ -45,7 +45,7 @@ func liveModel() model {
 // --- defaults ---
 
 func TestNewModelFollowsByDefault(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	if !m.follow {
 		t.Error("new model should start in follow mode")
 	}
