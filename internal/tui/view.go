@@ -56,8 +56,8 @@ func viewTooSmall(cols, rows int) string {
 }
 
 // viewStatusBar renders the top bar: app name | daemon status | live status |
-// session. The live segment is a disconnect banner when the stream is down,
-// otherwise the heartbeat / idle indicator.
+// session | error tape. The live segment is a disconnect banner when the stream
+// is down, otherwise the heartbeat / idle indicator.
 func (m model) viewStatusBar() string {
 	appName := "cchv"
 	daemonStatus := m.daemonStatusText()
@@ -69,8 +69,30 @@ func (m model) viewStatusBar() string {
 	if m.selectedSession != "" {
 		parts = append(parts, "session: "+clip(m.selectedSession, 24))
 	}
+	// Error tape: always visible when events are loaded.
+	if len(m.events) > 0 {
+		parts = append(parts, m.errorTapeText())
+	}
 	bar := strings.Join(parts, "  │  ")
 	return padRight(bar, m.width)
+}
+
+// errorTapeText returns the sticky error indicator for the status bar.
+// Format: "✘ N errors" or "no errors". Redundant glyph+text for noColor safety.
+func (m model) errorTapeText() string {
+	n := m.errorCount()
+	if n == 0 {
+		return "no errors"
+	}
+	return fmt.Sprintf("✘ %d error%s", n, pluralS(n))
+}
+
+// pluralS returns "s" when n != 1, "" otherwise.
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // liveSegment is the status-bar text for the live stream: a disconnect banner
@@ -83,7 +105,16 @@ func (m model) liveSegment() string {
 }
 
 // viewKeyBar renders the bottom context-sensitive key hint bar.
+// When filter input mode is active it shows the input line instead.
+// Active filter tokens are shown as persistent chips.
 func (m model) viewKeyBar() string {
+	// Filter input mode: show the text entry line.
+	if m.filterMode {
+		prompt := "/ " + m.filterInput + "▌"
+		hint := "  [Enter:apply  Esc:cancel]"
+		return padRight(prompt+hint, m.width)
+	}
+
 	var hints []string
 	switch m.focusedPane {
 	case paneSessions:
@@ -93,11 +124,22 @@ func (m model) viewKeyBar() string {
 		if m.follow {
 			follow = "f:following"
 		}
-		hints = []string{"j/k:move", "enter:inspect", follow, "G:live", "esc:back", "?:help", "q:quit"}
+		fold := "o:folded"
+		if !m.foldedView {
+			fold = "o:flat"
+		}
+		hints = []string{"j/k:move", "enter:inspect", follow, "G:live",
+			"/:filter", "e:err-hop", fold, "esc:back", "?:help", "q:quit"}
 	case paneInspector:
 		hints = []string{"j/k:scroll", "r:raw", "esc:back", "?:help", "q:quit"}
 	}
 	bar := strings.Join(hints, "  ")
+
+	// Append active filter chips.
+	if !m.filter.IsEmpty() {
+		bar += "  [filter: " + m.filter.raw + "]"
+	}
+
 	return padRight(bar, m.width)
 }
 
@@ -287,8 +329,9 @@ func (m model) viewEventsPane(w, h int) string {
 	default:
 		// Header row.
 		lines = append(lines, renderEventRowHeader(w))
-		for i, ev := range m.events {
-			row := buildEventRow(ev)
+		rows := m.visibleRows()
+		for i, dr := range rows {
+			row := buildDisplayEventRow(dr)
 			selected := i == m.eventCursor
 			rendered := renderEventRow(row, w, m.noColor, selected)
 			if m.focusedPane == paneEvents && selected {

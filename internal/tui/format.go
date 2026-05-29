@@ -195,8 +195,25 @@ func buildEventRow(ev *event.Event) eventRow {
 	}
 }
 
+// buildDisplayEventRow derives an eventRow from a displayRow (Phase 7).
+//
+// For a folded paired op it derives the hook label, status, and duration from
+// the pair — the status comes from the Post, the duration from Post−Pre.
+// For a standalone row it delegates to buildEventRow.
+func buildDisplayEventRow(dr displayRow) eventRow {
+	if !dr.IsPair {
+		return buildEventRow(dr.Pre)
+	}
+	// Folded paired op: use Pre for time/hook/tool/gist, Post for status.
+	row := buildEventRow(dr.Pre)
+	row.Status = dr.EffectiveStatus()
+	row.Duration = formatDuration(dr.Duration)
+	return row
+}
+
 // renderEventRow formats an eventRow into a fixed-width string for the given
-// available width. Columns: time(8) sp status(3) sp hook(16) sp tool(14) sp gist(rest).
+// available width. Columns: time(8) sp status(3) sp hook(16) sp tool(12) sp
+// gist(flex) sp duration(right-aligned, 7). Duration column is omitted when blank.
 // Minimum sensible width is ~50 chars; narrower just shows time+status+hook.
 func renderEventRow(r eventRow, width int, noColor bool, selected bool) string {
 	const (
@@ -204,24 +221,48 @@ func renderEventRow(r eventRow, width int, noColor bool, selected bool) string {
 		colStatus = 3
 		colHook   = 16
 		colTool   = 12
+		colDur    = 7 // e.g. "1234ms" or "12.3s"
 		sep       = " "
 	)
+	prefix := ""
+	if selected {
+		prefix = "> "
+	}
+	usedFixed := colTime + 1 + colStatus + 1 + colHook + 1 + colTool + 1
+	contentW := width - len(prefix)
+
+	// Reserve space for duration column when we have a duration to show.
+	durStr := r.Duration
+	durW := 0
+	if durStr != "" && contentW > usedFixed+colDur+1 {
+		durW = colDur + 1 // +1 for sep before duration
+	} else {
+		durStr = ""
+	}
+
+	gistW := contentW - usedFixed - durW
 	parts := []string{
 		padRight(r.Time, colTime),
 		statusGlyph(r.Status, noColor),
 		padRight(abbreviate(r.Hook, colHook), colHook),
 		padRight(r.Tool, colTool),
 	}
-	used := colTime + 1 + colStatus + 1 + colHook + 1 + colTool + 1
-	gistW := width - used
 	if gistW > 0 && r.Gist != "" {
-		parts = append(parts, clip(r.Gist, gistW))
+		gist := clip(r.Gist, gistW)
+		if durStr != "" {
+			// Pad gist to fill its column so duration is right-aligned.
+			gist = padRight(gist, gistW)
+		}
+		parts = append(parts, gist)
+	} else if durStr != "" && gistW > 0 {
+		// No gist but we have duration: fill gist space with blanks.
+		parts = append(parts, strings.Repeat(" ", gistW))
 	}
-	row := strings.Join(parts, sep)
-	if selected {
-		// reverse-video selection marker (plain compatible via ">" prefix)
-		row = "> " + row
+	if durStr != "" {
+		parts = append(parts, padRight(durStr, colDur))
 	}
+
+	row := prefix + strings.Join(parts, sep)
 	return row
 }
 
