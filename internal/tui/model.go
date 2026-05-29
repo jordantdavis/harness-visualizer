@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
+	osc52 "github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"jordandavis.dev/cc-harness-visualizer/internal/event"
@@ -117,6 +120,14 @@ type model struct {
 	// foldedView is true (default) for the folded Pre/Post op view.
 	// false = flat chronological per-event.
 	foldedView bool
+	// yankFn is called by 'y'/'Y' to copy text to the clipboard. It is
+	// injectable so tests can assert the exact string yanked without real
+	// clipboard side-effects. newModel wires in the OSC 52 default.
+	yankFn func(string) error
+
+	// statusMsg is a transient "toast" line shown in the key-hint bar after
+	// operations like yank. It is set on yank and cleared on the next key press.
+	statusMsg string
 }
 
 // newModel constructs a model with the given client. noColor should reflect
@@ -130,7 +141,16 @@ func newModel(c Client, noColor bool) model {
 		liveSessions: make(map[string]time.Time),
 		now:          time.Now,
 		foldedView:   true, // Phase 7: folded op view is default
+		yankFn:       defaultYankFn,
 	}
+}
+
+// defaultYankFn writes s to the system clipboard via OSC 52 — a terminal
+// escape sequence that works over SSH and in most modern terminals without
+// any external clipboard tool.
+func defaultYankFn(s string) error {
+	_, err := fmt.Fprint(os.Stderr, osc52.New(s))
+	return err
 }
 
 // Init sends the initial commands: health check, session load, live stream
@@ -398,6 +418,9 @@ func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateInspectorPane handles keys when the inspector pane is focused.
 func (m model) updateInspectorPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Clear any transient toast from a previous action.
+	m.statusMsg = ""
+
 	switch msg.String() {
 	case "j", "down":
 		m.inspectorScroll++
@@ -411,10 +434,38 @@ func (m model) updateInspectorPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.events) > 0 {
 			m.rawPager = true
 		}
+	case "y":
+		// Yank the focused event's Raw payload (the hook input/response JSON).
+		if ev := m.selectedEvent(); ev != nil && m.yankFn != nil {
+			if err := m.yankFn(string(ev.Raw)); err == nil {
+				m.statusMsg = "yanked value"
+			}
+		}
+	case "Y":
+		// Yank the whole event Raw, pretty-printed.
+		if ev := m.selectedEvent(); ev != nil && m.yankFn != nil {
+			s := prettyJSON(ev.Raw)
+			if err := m.yankFn(s); err == nil {
+				m.statusMsg = "yanked raw event"
+			}
+		}
 	case "esc", "h":
 		m.focusedPane = paneEvents
 	}
 	return m, nil
+}
+
+// prettyJSON returns a pretty-printed version of raw. Falls back to the
+// compact original if marshaling fails.
+func prettyJSON(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	pretty, err := json.MarshalIndent(json.RawMessage(raw), "", "  ")
+	if err != nil {
+		return string(raw)
+	}
+	return string(pretty)
 }
 
 // updateRawPager handles keys while the raw JSON pager is open.
