@@ -104,6 +104,19 @@ type model struct {
 
 	// NO_COLOR
 	noColor bool
+
+	// --- Phase 7: filter, error-hop, folded ops ---
+
+	// filter is the active parsed filter; IsEmpty() == true means "show all".
+	filter parsedFilter
+	// filterInput is the raw text the user is currently typing (filter mode).
+	filterInput string
+	// filterMode is true while the filter text-input line is open.
+	filterMode bool
+
+	// foldedView is true (default) for the folded Pre/Post op view.
+	// false = flat chronological per-event.
+	foldedView bool
 }
 
 // newModel constructs a model with the given client. noColor should reflect
@@ -116,6 +129,7 @@ func newModel(c Client, noColor bool) model {
 		follow:       true,
 		liveSessions: make(map[string]time.Time),
 		now:          time.Now,
+		foldedView:   true, // Phase 7: folded op view is default
 	}
 }
 
@@ -209,6 +223,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.rawPager {
 			return m.updateRawPager(msg)
 		}
+		if m.filterMode {
+			return m.updateFilterInput(msg)
+		}
 		if m.showHelp {
 			m.showHelp = false
 			return m, nil
@@ -219,7 +236,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateKeys handles keyboard input in normal (non-pager, non-help) mode.
+// updateKeys handles keyboard input in normal (non-pager, non-help, non-filter) mode.
 func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -238,6 +255,18 @@ func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.eventCursor = len(m.events) - 1
 			}
 		}
+		return m, nil
+
+	case "/":
+		// Enter filter input mode.
+		m.filterMode = true
+		m.filterInput = m.filter.raw // pre-populate with current filter
+		return m, nil
+
+	case "o":
+		// Toggle folded ↔ flat chronological view.
+		m.foldedView = !m.foldedView
+		m.clampEventCursor()
 		return m, nil
 
 	// pane switching
@@ -317,10 +346,12 @@ func (m model) updateSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // Manual vertical motion auto-pauses follow (the tail-f model); G snaps back to
 // the latest event and re-follows, clearing the buffered-new count.
 func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	rows := m.visibleRows()
+	n := len(rows)
 	switch msg.String() {
 	case "j", "down":
 		m.follow = false
-		if m.eventCursor < len(m.events)-1 {
+		if n > 0 && m.eventCursor < n-1 {
 			m.eventCursor++
 		}
 	case "k", "up":
@@ -337,22 +368,30 @@ func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "G":
 		m.follow = true
 		m.pendingCount = 0
-		if len(m.events) > 0 {
-			m.eventCursor = len(m.events) - 1
+		if n > 0 {
+			m.eventCursor = n - 1
 		}
 	case "ctrl+d":
 		m.follow = false
-		m.eventCursor = min(m.eventCursor+10, max(0, len(m.events)-1))
+		m.eventCursor = min(m.eventCursor+10, max(0, n-1))
 	case "ctrl+u":
 		m.follow = false
 		m.eventCursor = max(m.eventCursor-10, 0)
 	case "enter", "l":
-		if len(m.events) > 0 {
+		if n > 0 {
 			m.focusedPane = paneInspector
 			m.inspectorOpen = true
 		}
 	case "esc", "h":
 		m.focusedPane = paneSessions
+	case "e":
+		// Error-hop forward: next error row (wrapping).
+		m.follow = false
+		m.hopToError(+1)
+	case "E":
+		// Error-hop backward: previous error row (wrapping).
+		m.follow = false
+		m.hopToError(-1)
 	}
 	return m, nil
 }
@@ -385,6 +424,120 @@ func (m model) updateRawPager(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rawPager = false
 	}
 	return m, nil
+}
+
+// updateFilterInput handles keyboard input while the filter text-input is open.
+// Enter applies the filter and exits; Esc cancels (or clears active filter on
+// empty input); any other key edits the input text.
+func (m model) updateFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.filter = parseFilter(m.filterInput)
+		m.filterMode = false
+		m.clampEventCursor()
+	case "esc":
+		if m.filterInput == "" {
+			// Clear active filter.
+			m.filter = parsedFilter{}
+		}
+		m.filterMode = false
+		m.filterInput = ""
+		m.clampEventCursor()
+	case "backspace", "ctrl+h":
+		if len(m.filterInput) > 0 {
+			runes := []rune(m.filterInput)
+			m.filterInput = string(runes[:len(runes)-1])
+		}
+	case "ctrl+u":
+		m.filterInput = ""
+	default:
+		// Append printable runes.
+		if msg.Type == tea.KeyRunes {
+			m.filterInput += string(msg.Runes)
+		}
+	}
+	return m, nil
+}
+
+// clampEventCursor ensures eventCursor is within the visible rows after a
+// filter or fold change.
+func (m *model) clampEventCursor() {
+	rows := m.visibleRows()
+	n := len(rows)
+	if n == 0 {
+		m.eventCursor = 0
+		return
+	}
+	if m.eventCursor >= n {
+		m.eventCursor = n - 1
+	}
+}
+
+// visibleRows returns the display rows visible under the current filter and
+// fold mode. In folded view it pairs Pre/Post events; in flat view it wraps
+// each event as a standalone row.
+func (m *model) visibleRows() []displayRow {
+	var rows []displayRow
+	if m.foldedView {
+		rows = buildDisplayRows(m.events)
+	} else {
+		rows = make([]displayRow, len(m.events))
+		for i, ev := range m.events {
+			rows[i] = displayRow{Pre: ev}
+		}
+	}
+	if m.filter.IsEmpty() {
+		return rows
+	}
+	out := rows[:0:0]
+	for _, r := range rows {
+		if matchEvent(m.filter, r) {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// selectedDisplayRow returns the currently selected displayRow, or a zero value.
+func (m *model) selectedDisplayRow() (displayRow, bool) {
+	rows := m.visibleRows()
+	if len(rows) == 0 || m.eventCursor >= len(rows) {
+		return displayRow{}, false
+	}
+	return rows[m.eventCursor], true
+}
+
+// errorCount returns the number of visible rows with statusError.
+func (m *model) errorCount() int {
+	n := 0
+	for _, r := range m.visibleRows() {
+		if r.EffectiveStatus() == statusError {
+			n++
+		}
+	}
+	return n
+}
+
+// hopToNextError moves the cursor to the next (or previous) error row,
+// wrapping around. dir=+1 for forward, -1 for backward.
+func (m *model) hopToError(dir int) {
+	rows := m.visibleRows()
+	if len(rows) == 0 {
+		return
+	}
+	start := m.eventCursor
+	i := (start + dir + len(rows)) % len(rows)
+	for i != start {
+		if rows[i].EffectiveStatus() == statusError {
+			m.eventCursor = i
+			return
+		}
+		i = (i + dir + len(rows)) % len(rows)
+	}
+	// Check start itself if it's the only error.
+	if rows[start].EffectiveStatus() == statusError {
+		m.eventCursor = start
+	}
 }
 
 // nextPane cycles focus through the panes available in the current layout.
@@ -442,12 +595,18 @@ func max(a, b int) int {
 	return b
 }
 
-// selectedEvent returns the currently selected event, or nil.
+// selectedEvent returns the event to show in the inspector for the current
+// selection. For a paired op it returns the Post (which has the result); for a
+// standalone or running op it returns the Pre. Returns nil when nothing is selected.
 func (m *model) selectedEvent() *event.Event {
-	if len(m.events) == 0 || m.eventCursor >= len(m.events) {
+	dr, ok := m.selectedDisplayRow()
+	if !ok {
 		return nil
 	}
-	return m.events[m.eventCursor]
+	if dr.IsPair && dr.Post != nil {
+		return dr.Post
+	}
+	return dr.Pre
 }
 
 // daemonStatusText returns a terse string for the status bar.
