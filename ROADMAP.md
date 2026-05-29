@@ -202,12 +202,14 @@ daemon-as-buffer design):
   (next Post of same tool in session) — see Phase 7.
 - **Port strategy:** default `7842`, ephemeral fallback written to a port file.
 
-### Phase 1 — Event contract + storage
-- [ ] `internal/event`: `Event` struct, `Raw json.RawMessage` passthrough, (de)serialization.
-- [ ] `internal/paths`: XDG data/runtime dir resolution, port file, pidfile, env overrides.
-- [ ] `internal/store`: per-session JSONL writer (append, buffered, periodic flush),
-      session listing, full + `?since=seq` reads, idle-handle cleanup.
-- [ ] Tests: round-trip serialization, concurrent appends to one session, listing/reads.
+### Phase 1 — Event contract + storage ✅
+- [x] `internal/event`: `Event` struct, `Raw json.RawMessage` passthrough, (de)serialization.
+- [x] `internal/paths`: XDG data/runtime dir resolution, port file, pidfile, env overrides.
+- [x] `internal/store`: per-session JSONL writer (append, seq-resume), session listing,
+      full + `since=seq` reads. (Buffering/periodic-flush + idle-handle cleanup deferred to
+      Phase 2 daemon, where buffering belongs — see plan. Append is synchronous-but-thread-safe.)
+- [x] Tests: round-trip serialization, concurrent appends to one session (validated under
+      `-race`), listing/reads, seq-resume, malformed-line resilience.
 
 ### Phase 2 — Daemon
 - [ ] `cchv daemon` command (+ `--foreground`).
