@@ -89,6 +89,19 @@ type model struct {
 	daemonError string
 	lastCheck   time.Time
 
+	// live (SSE) state
+	streamCh     <-chan StreamEvent   // current live subscription; nil until opened
+	streamUp     bool                 // true while the SSE connection is healthy
+	streamErr    string               // last disconnect reason (for the banner)
+	follow       bool                 // tail-follow the selected session's events
+	pendingCount int                  // new events buffered below while paused
+	liveSessions map[string]time.Time // sessionID -> last live event time (for ●)
+	lastEventAt  time.Time            // wall-clock of the most recent live event
+	recentEvents []time.Time          // sliding window of recent event times (rate)
+
+	// now is the clock, injectable for deterministic tests.
+	now func() time.Time
+
 	// NO_COLOR
 	noColor bool
 }
@@ -97,17 +110,23 @@ type model struct {
 // the NO_COLOR env var and whether the terminal supports color.
 func newModel(c Client, noColor bool) model {
 	return model{
-		client:  c,
-		noColor: noColor,
-		layout:  LayoutNarrow,
+		client:       c,
+		noColor:      noColor,
+		layout:       LayoutNarrow,
+		follow:       true,
+		liveSessions: make(map[string]time.Time),
+		now:          time.Now,
 	}
 }
 
-// Init sends the initial commands: health check + session load.
+// Init sends the initial commands: health check, session load, live stream
+// subscription, and the heartbeat tick.
 func (m model) Init() tea.Cmd {
 	return tea.Batch(
 		cmdHealth(m.client),
 		cmdLoadSessions(m.client),
+		cmdOpenStream(m.client),
+		cmdTick(),
 	)
 }
 
@@ -136,6 +155,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessionsErr = msg.err
 		if msg.err == nil {
 			m.sessions = msg.sessions
+			m.sortSessionsLive()
 			if len(m.sessions) > 0 && m.selectedSession == "" {
 				// Auto-select the first session.
 				m.selectedSession = m.sessions[0].ID
@@ -144,6 +164,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+
+	case msgStreamOpened:
+		m.streamCh = msg.ch
+		m.streamUp = true
+		m.streamErr = ""
+		// Resume pulling frames and refresh session counts after (re)connect.
+		return m, tea.Batch(cmdWaitForStream(msg.ch), cmdLoadSessions(m.client))
+
+	case msgLiveEvent:
+		m.applyLiveEvent(msg.ev)
+		if m.streamCh != nil {
+			return m, cmdWaitForStream(m.streamCh)
+		}
+		return m, nil
+
+	case msgStreamError:
+		m.streamUp = false
+		if msg.err != nil {
+			m.streamErr = msg.err.Error()
+		}
+		m.streamCh = nil
+		return m, cmdReconnectAfter(reconnectDelay)
+
+	case msgReconnect:
+		return m, cmdOpenStream(m.client)
+
+	case msgTick:
+		// Re-render so idle/heartbeat and ● expiry stay current.
+		return m, cmdTick()
 
 	case msgEventsLoaded:
 		if msg.sessionID == m.selectedSession {
@@ -178,6 +227,17 @@ func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "?":
 		m.showHelp = true
+		return m, nil
+
+	case "f":
+		// Toggle tail-follow. Re-following snaps to the latest event.
+		m.follow = !m.follow
+		if m.follow {
+			m.pendingCount = 0
+			if len(m.events) > 0 {
+				m.eventCursor = len(m.events) - 1
+			}
+		}
 		return m, nil
 
 	// pane switching
@@ -253,25 +313,38 @@ func (m model) updateSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateEventsPane handles keys when the events pane is focused.
+//
+// Manual vertical motion auto-pauses follow (the tail-f model); G snaps back to
+// the latest event and re-follows, clearing the buffered-new count.
 func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
+		m.follow = false
 		if m.eventCursor < len(m.events)-1 {
 			m.eventCursor++
 		}
 	case "k", "up":
+		m.follow = false
 		if m.eventCursor > 0 {
 			m.eventCursor--
 		}
 	case "g":
+		m.follow = false
 		m.eventCursor = 0
+	case " ", "space":
+		// Explicit pause.
+		m.follow = false
 	case "G":
+		m.follow = true
+		m.pendingCount = 0
 		if len(m.events) > 0 {
 			m.eventCursor = len(m.events) - 1
 		}
 	case "ctrl+d":
+		m.follow = false
 		m.eventCursor = min(m.eventCursor+10, max(0, len(m.events)-1))
 	case "ctrl+u":
+		m.follow = false
 		m.eventCursor = max(m.eventCursor-10, 0)
 	case "enter", "l":
 		if len(m.events) > 0 {

@@ -55,21 +55,31 @@ func viewTooSmall(cols, rows int) string {
 	return msg
 }
 
-// viewStatusBar renders the top bar: app name | daemon status | session.
+// viewStatusBar renders the top bar: app name | daemon status | live status |
+// session. The live segment is a disconnect banner when the stream is down,
+// otherwise the heartbeat / idle indicator.
 func (m model) viewStatusBar() string {
 	appName := "cchv"
 	daemonStatus := m.daemonStatusText()
-	session := ""
-	if m.selectedSession != "" {
-		session = "session: " + clip(m.selectedSession, 24)
-	}
 
 	parts := []string{appName, daemonStatus}
-	if session != "" {
-		parts = append(parts, session)
+	if live := m.liveSegment(); live != "" {
+		parts = append(parts, live)
+	}
+	if m.selectedSession != "" {
+		parts = append(parts, "session: "+clip(m.selectedSession, 24))
 	}
 	bar := strings.Join(parts, "  │  ")
 	return padRight(bar, m.width)
+}
+
+// liveSegment is the status-bar text for the live stream: a disconnect banner
+// while retrying, the heartbeat/idle indicator while connected, or "".
+func (m model) liveSegment() string {
+	if !m.streamUp && m.streamErr != "" {
+		return "⚠ stream disconnected — retrying (" + truncateErr(m.streamErr, 24) + ")"
+	}
+	return m.liveStatusText()
 }
 
 // viewKeyBar renders the bottom context-sensitive key hint bar.
@@ -79,7 +89,11 @@ func (m model) viewKeyBar() string {
 	case paneSessions:
 		hints = []string{"j/k:move", "enter:select", "tab:focus", "?:help", "q:quit"}
 	case paneEvents:
-		hints = []string{"j/k:move", "enter:inspect", "esc:back", "tab:focus", "?:help", "q:quit"}
+		follow := "f:follow"
+		if m.follow {
+			follow = "f:following"
+		}
+		hints = []string{"j/k:move", "enter:inspect", follow, "G:live", "esc:back", "?:help", "q:quit"}
 	case paneInspector:
 		hints = []string{"j/k:scroll", "r:raw", "esc:back", "?:help", "q:quit"}
 	}
@@ -219,12 +233,17 @@ func (m model) viewSessionsPane(w, h int) string {
 		lines = append(lines, clip("Daemon: "+m.daemonStatusText(), w))
 	default:
 		for i, s := range m.sessions {
-			label := sessionLabel(s.ID, s.EventCount, w)
+			// Row = cursor(2) + live-marker(2) + label. Live sessions get a ●;
+			// others a blank of equal width so labels stay column-aligned.
+			cursor := "  "
 			if i == m.sessionCursor {
-				label = "> " + padRight(label, w-2)
-			} else {
-				label = "  " + padRight(label, w-2)
+				cursor = "> "
 			}
+			marker := "  "
+			if m.isLive(s.ID) {
+				marker = "● "
+			}
+			label := padRight(cursor+marker+sessionLabel(s.ID, s.EventCount, w-4), w)
 			if m.focusedPane == paneSessions && i == m.sessionCursor {
 				label = focusMark(label, m.noColor)
 			}
@@ -237,11 +256,21 @@ func (m model) viewSessionsPane(w, h int) string {
 
 // viewEventsPane renders the events list pane.
 func (m model) viewEventsPane(w, h int) string {
-	title := padRight("EVENTS", w)
+	// Title carries a follow/pause indicator and, when paused, the count of
+	// new events buffered below the viewport (↓ N new).
+	titleText := "EVENTS"
 	if m.selectedSession != "" {
-		title = padRight("EVENTS  "+clip(m.selectedSession, w-9), w)
+		titleText = "EVENTS  " + clip(m.selectedSession, w-9)
 	}
-	lines := []string{title}
+	if !m.follow && m.pendingCount > 0 {
+		badge := fmt.Sprintf("↓ %d new", m.pendingCount)
+		pad := w - len([]rune(titleText)) - len([]rune(badge))
+		if pad < 1 {
+			pad = 1
+		}
+		titleText = titleText + strings.Repeat(" ", pad) + badge
+	}
+	lines := []string{padRight(titleText, w)}
 
 	switch {
 	case m.selectedSession == "":
@@ -321,6 +350,9 @@ func (m model) viewHelp() string {
 		padRight("  g / G          Jump to first / last", m.width),
 		padRight("  Enter / l      Select / go deeper", m.width),
 		padRight("  Esc / h        Go back", m.width),
+		padRight("  f              Toggle tail-follow (live)", m.width),
+		padRight("  G              Jump to latest & re-follow", m.width),
+		padRight("  space          Pause follow", m.width),
 		padRight("  r              Raw JSON pager (inspector)", m.width),
 		padRight("  q              Quit", m.width),
 		padRight("  ?              Toggle this help", m.width),

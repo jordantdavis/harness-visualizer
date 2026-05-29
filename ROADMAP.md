@@ -247,12 +247,18 @@ daemon-as-buffer design):
 - [x] First-launch states: no sessions (instructive empty + plumbing status), have-history,
       empty session, terminal-too-small.
 
-### Phase 6 — TUI live
-- [ ] SSE subscription to `GET /stream`; live session pinned to top with `●`.
-- [ ] Follow mode with auto-pause on manual scroll; `↓ N new` buffer count; `G` re-follow.
-- [ ] Streaming heartbeat / events-per-sec indicator; `idle Ns` when silent.
-- [ ] Source-disconnect banner + retry; malformed-event degraded row (never crash).
-- [ ] Multiple concurrent live sessions (keyed by `session_id`).
+### Phase 6 — TUI live ✅
+- [x] SSE subscription to `GET /stream` (all sessions, keyed by `session_id`); live
+      sessions pinned to top with `●` (stable partition, selection/cursor preserved by ID).
+- [x] Follow mode (default on) with auto-pause on manual scroll/`space`; `↓ N new` buffer
+      count while paused; `G` jumps to latest & re-follows; `f` toggles. Live events dedupe
+      against loaded history by `Seq`.
+- [x] Streaming heartbeat (`live · ▮ N/s`) / events-per-sec indicator; `idle Ns` when silent
+      (1s heartbeat tick; injectable clock for deterministic tests).
+- [x] Source-disconnect banner + auto-retry (2s backoff, re-fetches session counts on
+      reconnect); malformed SSE frame → degraded `(malformed)` row, never crashes the stream.
+- [x] Multiple concurrent live sessions (keyed by `session_id`): one all-sessions stream,
+      per-session liveness + summary updates, brand-new sessions appear live automatically.
 
 ### Phase 7 — TUI comprehension
 - [ ] Filter grammar (`/`) with token + fuzzy matching; persistent filter chips.

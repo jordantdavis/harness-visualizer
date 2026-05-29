@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +31,11 @@ type Client interface {
 
 	// Health returns nil when the daemon is reachable and healthy.
 	Health() error
+
+	// Stream opens a live SSE subscription. sessionFilter "" watches all
+	// sessions. The returned channel emits StreamEvents until ctx is cancelled
+	// or the connection drops (a final value with Err set), then closes.
+	Stream(ctx context.Context, sessionFilter string) (<-chan StreamEvent, error)
 }
 
 // HTTPClient is the production Client that talks to a running daemon over HTTP.
@@ -127,6 +133,11 @@ type FakeClient struct {
 	Sessions_ []store.SessionInfo
 	Events_   map[string][]*event.Event // keyed by sessionID
 	HealthErr error
+
+	// StreamCh, if set, is returned by Stream so tests can push live events.
+	// When nil, Stream lazily creates a buffered channel.
+	StreamCh  chan StreamEvent
+	StreamErr error // when set, Stream returns this error
 }
 
 // Sessions implements Client.
@@ -148,3 +159,15 @@ func (f *FakeClient) Events(sessionID string, sinceSeq int64) ([]*event.Event, e
 
 // Health implements Client.
 func (f *FakeClient) Health() error { return f.HealthErr }
+
+// Stream implements Client. It returns StreamCh (creating a buffered channel
+// if nil) so tests drive live events by sending on FakeClient.StreamCh.
+func (f *FakeClient) Stream(ctx context.Context, sessionFilter string) (<-chan StreamEvent, error) {
+	if f.StreamErr != nil {
+		return nil, f.StreamErr
+	}
+	if f.StreamCh == nil {
+		f.StreamCh = make(chan StreamEvent, 16)
+	}
+	return f.StreamCh, nil
+}
