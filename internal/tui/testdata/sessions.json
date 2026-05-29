@@ -1,0 +1,14 @@
+[
+  {
+    "id": "session-abc-123",
+    "event_count": 3,
+    "last_seq": 3,
+    "mod_time": "2026-05-28T10:00:00Z"
+  },
+  {
+    "id": "session-def-456",
+    "event_count": 1,
+    "last_seq": 1,
+    "mod_time": "2026-05-28T09:00:00Z"
+  }
+]
