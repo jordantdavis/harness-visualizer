@@ -211,34 +211,34 @@ daemon-as-buffer design):
 - [x] Tests: round-trip serialization, concurrent appends to one session (validated under
       `-race`), listing/reads, seq-resume, malformed-line resilience.
 
-### Phase 2 — Daemon
-- [ ] `cchv daemon` command (+ `--foreground`).
-- [ ] Bind `127.0.0.1`, single-instance via port bind + pidfile; write actual port to port file.
-- [ ] 5 HTTP routes; `POST /events` accepts bytes → buffered channel → returns `204` fast.
-- [ ] Writer goroutine per session; in-memory hub for SSE fan-out (`GET /stream`).
-- [ ] `Seq` assignment (per-session monotonic) on accept.
-- [ ] Graceful shutdown: flush all writers on `Stop`/`SessionEnd` and on signal.
-- [ ] Tests: route behavior, ordering under burst, SSE fan-out to multiple subscribers.
+### Phase 2 — Daemon ✅
+- [x] `cchv daemon` command (+ `--foreground`).
+- [x] Bind `127.0.0.1`, single-instance via port bind + pidfile; write actual port to port file.
+- [x] 5 HTTP routes; `POST /events` accepts bytes → buffered channel → returns `204` fast.
+- [x] Writer goroutine per session; in-memory hub for SSE fan-out (`GET /stream`).
+- [x] `Seq` assignment (per-session monotonic) on accept.
+- [x] Graceful shutdown: flush all writers on `Stop`/`SessionEnd` and on signal.
+- [x] Tests: route behavior, ordering under burst, SSE fan-out to multiple subscribers.
 
-### Phase 3 — Hook CLI
-- [ ] `cchv hook` (bare/default invocation): bounded stdin read, defensive enrich
+### Phase 3 — Hook CLI ✅
+- [x] `cchv hook` (bare/default invocation): bounded stdin read, defensive enrich
       (timestamp, ID, host, pid, promoted fields), `POST` under the ~100ms / 50ms budget.
-- [ ] Always exit 0; top-level panic recovery; nothing on stdout; silent stderr (debug env opt-in).
-- [ ] Detached daemon auto-spawn on connection-refused (no wait, drop current event).
-- [ ] Tests: malformed/huge stdin, daemon-down path, timeout path, exit code always 0.
+- [x] Always exit 0; top-level panic recovery; nothing on stdout; silent stderr (debug env opt-in).
+- [x] Detached daemon auto-spawn on connection-refused (no wait, drop current event).
+- [x] Tests: malformed/huge stdin, daemon-down path, timeout path, exit code always 0.
 
 ### Phase 4 — Plugin manifest
 - [ ] `plugin/`: Claude Code plugin registering `cchv hook` for ALL hook events.
 - [ ] Install/uninstall docs (one command path).
 - [ ] Manual end-to-end smoke: install plugin → run CC → events land in JSONL.
 
-### Phase 5 — TUI skeleton (history-fed)
-- [ ] `cchv tui`: master-detail layout, responsive collapse (120/80/<80), focus model.
-- [ ] Top status bar + bottom context-sensitive keyhint bar; `?` help overlay.
-- [ ] Event row hierarchy (§ Event row); `NO_COLOR`/dumb-term render path designed first.
-- [ ] Sessions list via `GET /sessions`; events via `GET /sessions/{id}/events`.
-- [ ] Inspector v1: key-facts header + foldable JSON tree + `r` raw pager.
-- [ ] First-launch states: no sessions (instructive empty + plumbing status), have-history,
+### Phase 5 — TUI skeleton (history-fed) ✅
+- [x] `cchv tui`: master-detail layout, responsive collapse (120/80/<80), focus model.
+- [x] Top status bar + bottom context-sensitive keyhint bar; `?` help overlay.
+- [x] Event row hierarchy (§ Event row); `NO_COLOR`/dumb-term render path designed first.
+- [x] Sessions list via `GET /sessions`; events via `GET /sessions/{id}/events`.
+- [x] Inspector v1: key-facts header + foldable JSON tree + `r` raw pager.
+- [x] First-launch states: no sessions (instructive empty + plumbing status), have-history,
       empty session, terminal-too-small.
 
 ### Phase 6 — TUI live
