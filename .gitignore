@@ -1,0 +1,19 @@
+# Binaries
+/cchv
+/bin/
+*.exe
+*.test
+
+# Go
+/vendor/
+*.out
+
+# Local data / runtime (in case it ever lands in-tree during dev)
+/tmp/
+*.jsonl
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
