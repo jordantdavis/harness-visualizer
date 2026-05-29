@@ -1,0 +1,16 @@
+[
+  {
+    "id": "evt-101",
+    "captured_at": "2026-05-28T09:00:01Z",
+    "seq": 1,
+    "hook_event": "UserPromptSubmit",
+    "session_id": "session-def-456",
+    "cwd": "/tmp",
+    "tool_name": "",
+    "raw": {
+      "hook_event_name": "UserPromptSubmit",
+      "session_id": "session-def-456",
+      "prompt": "Hello"
+    }
+  }
+]
