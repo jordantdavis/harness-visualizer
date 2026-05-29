@@ -1,0 +1,17 @@
+{
+  "name": "cchv",
+  "description": "See what your Claude Code harness actually does — capture every hook event.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Jordan Davis",
+    "email": "jordandavis@hey.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "hooks",
+    "harness",
+    "visualizer",
+    "debugging",
+    "observability"
+  ]
+}

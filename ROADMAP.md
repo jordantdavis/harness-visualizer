@@ -228,9 +228,15 @@ daemon-as-buffer design):
 - [x] Tests: malformed/huge stdin, daemon-down path, timeout path, exit code always 0.
 
 ### Phase 4 — Plugin manifest
-- [ ] `plugin/`: Claude Code plugin registering `cchv hook` for ALL hook events.
-- [ ] Install/uninstall docs (one command path).
-- [ ] Manual end-to-end smoke: install plugin → run CC → events land in JSONL.
+- [x] `plugin/`: Claude Code plugin registering `cchv hook` for ALL 9 hook events
+      (`plugin/.claude-plugin/plugin.json` + `plugin/hooks/hooks.json`, `async:true`,
+      `"${CLAUDE_PLUGIN_ROOT}/bin/cchv" hook`). Repo-root `.claude-plugin/marketplace.json`
+      makes it discoverable via `claude plugin marketplace add`. Passes `claude plugin validate`.
+- [x] Install/uninstall docs (one command path) — `README.md` Install/Uninstall sections.
+- [x] Smoke test: `scripts/smoke.sh` exercises the capture path end-to-end at the plumbing
+      level (hook → daemon auto-spawn → JSONL) in an isolated `CCHV_DATA_DIR` — **passing**.
+      Remaining MANUAL step (documented in smoke.sh + README, **not yet run**): install plugin
+      into a real Claude Code session and confirm live events land.
 
 ### Phase 5 — TUI skeleton (history-fed) ✅
 - [x] `cchv tui`: master-detail layout, responsive collapse (120/80/<80), focus model.
