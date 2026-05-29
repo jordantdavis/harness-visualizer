@@ -82,8 +82,13 @@ func (m model) liveSegment() string {
 	return m.liveStatusText()
 }
 
-// viewKeyBar renders the bottom context-sensitive key hint bar.
+// viewKeyBar renders the bottom context-sensitive key hint bar. When a
+// transient statusMsg is set (e.g. after a yank), it is shown instead of the
+// normal hints so the user gets confirmation without a separate popup.
 func (m model) viewKeyBar() string {
+	if m.statusMsg != "" {
+		return padRight("  "+m.statusMsg, m.width)
+	}
 	var hints []string
 	switch m.focusedPane {
 	case paneSessions:
@@ -95,7 +100,7 @@ func (m model) viewKeyBar() string {
 		}
 		hints = []string{"j/k:move", "enter:inspect", follow, "G:live", "esc:back", "?:help", "q:quit"}
 	case paneInspector:
-		hints = []string{"j/k:scroll", "r:raw", "esc:back", "?:help", "q:quit"}
+		hints = []string{"j/k:scroll", "y:yank", "Y:yank-raw", "r:raw", "esc:back", "?:help", "q:quit"}
 	}
 	bar := strings.Join(hints, "  ")
 	return padRight(bar, m.width)
@@ -321,10 +326,9 @@ func (m model) viewInspectorPane(w, h int) string {
 	lines = append(lines, padRight(fmt.Sprintf("Seq:     %d", ev.Seq), w))
 	lines = append(lines, strings.Repeat("─", w))
 
-	// Foldable JSON tree (flat for Phase 5 — folding is Phase 7).
-	lines = append(lines, padRight("Raw JSON:", w))
-	jsonLines := formatJSONLines(ev.Raw, w)
-	lines = append(lines, jsonLines...)
+	// Syntax-aware inspector body (commands, diffs, paths rendered distinctly).
+	lines = append(lines, padRight("Payload:", w))
+	lines = append(lines, inspectLines(ev, w)...)
 
 	// Apply scroll offset.
 	startLine := 1 // keep header visible
