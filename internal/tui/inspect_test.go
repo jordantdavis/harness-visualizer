@@ -173,7 +173,7 @@ func (c *captureYank) fn(s string) error {
 // yankModel returns a model wired with events and focused on the inspector pane.
 func yankModel() model {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = fake.Sessions_
 	m.selectedSession = "sess-1"
 	m.events = fake.Events_["sess-1"]
@@ -278,7 +278,7 @@ func TestStatusMsgAppearsInView(t *testing.T) {
 
 func TestDefaultYankFnIsNotNil(t *testing.T) {
 	// newModel should wire a non-nil default yankFn.
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	if m.yankFn == nil {
 		t.Error("newModel should provide a non-nil default yankFn")
 	}

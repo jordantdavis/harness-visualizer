@@ -39,7 +39,7 @@ func phase7Model() model {
 		{ID: "e5", Seq: 5, HookEvent: "Notification", SessionID: "s1", CapturedAt: t0.Add(5 * time.Second)},
 	}
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.selectedSession = "s1"
 	m.events = evs
 	m.focusedPane = paneEvents
@@ -52,7 +52,7 @@ func phase7Model() model {
 // --- folded view (default ON) -----------------------------------------------
 
 func TestFoldedViewIsDefault(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	if !m.foldedView {
 		t.Error("foldedView should be true by default")
 	}

@@ -70,7 +70,7 @@ func TestWindowSizeSetsLayout(t *testing.T) {
 		{30, 5, LayoutTooSmall},
 	}
 	for _, tc := range tests {
-		m := newModel(fixtureClient(), false)
+		m := newModel(fixtureClient(), false, false)
 		updated, _ := m.Update(tea.WindowSizeMsg{Width: tc.w, Height: tc.h})
 		m2 := updated.(model)
 		if m2.layout != tc.layout {
@@ -86,7 +86,7 @@ func TestWindowSizeSetsLayout(t *testing.T) {
 
 func TestSessionsLoadedPopulatesState(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	// Simulate the sessions-loaded message.
 	updated, cmd := m.Update(msgSessionsLoaded{sessions: fake.Sessions_, err: nil})
 	m2 := updated.(model)
@@ -108,7 +108,7 @@ func TestSessionsLoadedPopulatesState(t *testing.T) {
 }
 
 func TestSessionsLoadedError(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	updated, cmd := m.Update(msgSessionsLoaded{err: fmt.Errorf("connection refused")})
 	m2 := updated.(model)
 	if m2.sessionsErr == nil {
@@ -123,7 +123,7 @@ func TestSessionsLoadedError(t *testing.T) {
 
 func TestEventsLoadedPopulatesState(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	// First load sessions to set selectedSession.
 	updated, _ := m.Update(msgSessionsLoaded{sessions: fake.Sessions_})
 	m2 := updated.(model)
@@ -144,7 +144,7 @@ func TestEventsLoadedPopulatesState(t *testing.T) {
 
 func TestEventsLoadedIgnoresStaleSession(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	updated, _ := m.Update(msgSessionsLoaded{sessions: fake.Sessions_})
 	m2 := updated.(model)
 	// Deliver events for a different session — should be ignored.
@@ -162,7 +162,7 @@ func TestEventsLoadedIgnoresStaleSession(t *testing.T) {
 
 func TestKeyJMovesSessionCursor(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = fake.Sessions_
 	m.focusedPane = paneSessions
 
@@ -175,7 +175,7 @@ func TestKeyJMovesSessionCursor(t *testing.T) {
 
 func TestKeyKMovesSessionCursorUp(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = fake.Sessions_
 	m.sessionCursor = 1
 	m.focusedPane = paneSessions
@@ -189,7 +189,7 @@ func TestKeyKMovesSessionCursorUp(t *testing.T) {
 
 func TestKeyJDoesNotExceedBounds(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = fake.Sessions_
 	m.sessionCursor = len(fake.Sessions_) - 1
 	m.focusedPane = paneSessions
@@ -202,7 +202,7 @@ func TestKeyJDoesNotExceedBounds(t *testing.T) {
 }
 
 func TestTabCyclesFocus(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	m.width = 140
 	m.height = 24
 	m.layout = LayoutWide
@@ -228,7 +228,7 @@ func TestTabCyclesFocus(t *testing.T) {
 }
 
 func TestKeyQQuitsModel(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	if cmd == nil {
 		t.Fatal("q should produce tea.Quit command")
@@ -241,7 +241,7 @@ func TestKeyQQuitsModel(t *testing.T) {
 }
 
 func TestHelpToggle(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m2 := updated.(model)
 	if !m2.showHelp {
@@ -259,7 +259,7 @@ func TestHelpToggle(t *testing.T) {
 
 func TestViewNoPanicAtBreakpoints(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, false)
+	m := newModel(fake, false, false)
 	m.sessions = fake.Sessions_
 	m.selectedSession = "sess-1"
 	m.events = fake.Events_["sess-1"]
@@ -281,7 +281,7 @@ func TestViewNoPanicAtBreakpoints(t *testing.T) {
 }
 
 func TestViewTooSmallMessage(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	m.width = 30
 	m.height = 5
 	m.layout = LayoutTooSmall
@@ -293,7 +293,7 @@ func TestViewTooSmallMessage(t *testing.T) {
 
 func TestViewEmptyState(t *testing.T) {
 	// No sessions loaded.
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	m.width = 100
 	m.height = 24
 	m.layout = LayoutMedium
@@ -305,7 +305,7 @@ func TestViewEmptyState(t *testing.T) {
 
 func TestViewNoColorRendering(t *testing.T) {
 	fake := fixtureClient()
-	m := newModel(fake, true) // noColor=true
+	m := newModel(fake, true, false) // noColor=true
 	m.width = 100
 	m.height = 24
 	m.layout = LayoutMedium
@@ -319,7 +319,7 @@ func TestViewNoColorRendering(t *testing.T) {
 }
 
 func TestViewHelp(t *testing.T) {
-	m := newModel(fixtureClient(), false)
+	m := newModel(fixtureClient(), false, false)
 	m.width = 100
 	m.height = 24
 	m.showHelp = true

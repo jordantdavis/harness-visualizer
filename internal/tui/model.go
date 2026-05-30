@@ -128,20 +128,29 @@ type model struct {
 	// statusMsg is a transient "toast" line shown in the key-hint bar after
 	// operations like yank. It is set on yank and cleared on the next key press.
 	statusMsg string
+
+	// reducedMotion suppresses animated indicators (blinking block character,
+	// etc.) when true. Set via --no-animation flag or implied by noColor.
+	reducedMotion bool
 }
 
-// newModel constructs a model with the given client. noColor should reflect
-// the NO_COLOR env var and whether the terminal supports color.
-func newModel(c Client, noColor bool) model {
+// newModel constructs a model with the given client and rendering options.
+//
+//   - noColor: true when NO_COLOR env var is set or the terminal is dumb.
+//     Renders use glyphs + text tags only; implies reducedMotion.
+//   - reducedMotion: true when --no-animation is set. Suppresses animated
+//     indicators (blinking ▮ block) while keeping textual rate/idle info.
+func newModel(c Client, noColor bool, reducedMotion bool) model {
 	return model{
-		client:       c,
-		noColor:      noColor,
-		layout:       LayoutNarrow,
-		follow:       true,
-		liveSessions: make(map[string]time.Time),
-		now:          time.Now,
-		foldedView:   true, // Phase 7: folded op view is default
-		yankFn:       defaultYankFn,
+		client:        c,
+		noColor:       noColor,
+		reducedMotion: reducedMotion || noColor, // noColor implies reduced motion
+		layout:        LayoutNarrow,
+		follow:        true,
+		liveSessions:  make(map[string]time.Time),
+		now:           time.Now,
+		foldedView:    true, // Phase 7: folded op view is default
+		yankFn:        defaultYankFn,
 	}
 }
 
