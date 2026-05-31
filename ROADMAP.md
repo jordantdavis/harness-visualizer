@@ -118,43 +118,50 @@ the goal is "imperceptible," and the daemon (not the hook) is the buffer.
 - Dial `127.0.0.1:PORT` directly (no DNS, avoid `localhost` resolver edge cases).
 - Keep the hook-path build tiny: `internal/client` must NOT import `internal/tui`.
 
-### TUI UX
+### TUI UX (Phase 8 redesign — supersedes the always-3-column model below)
 
-- **Master-detail** (`lazygit`/`k9s` model): `Sessions │ Events │ Inspector`.
-  Responsive collapse: ≥120 cols = 3-column; 80–119 = 2-pane + inspector drawer;
-  <80 = single-pane stacked with breadcrumb. Top status bar + bottom context-sensitive
-  keyhint bar.
-- **Event row:** `time · status-glyph · hook · tool · target-gist · duration` with
-  fixed-width columns so the eye scans down. Status = **glyph + color (redundant)** so
-  it survives `NO_COLOR`, SSH, and color-blindness. Right-aligned duration column.
-- **Live = `tail -f` mental model.** "Mode" is emergent from selection + tail position,
-  not a hard toggle. Follow auto-pauses on manual scroll; buffers new events with an
-  `↓ N new` count; `G` jumps to live and re-follows. Heartbeat/sparkline shows
-  streaming vs `idle Ns`.
-- **Folded Pre/Post operations** are the default (one row flips `▶`→`✔`/`✘` with
-  duration); `o` toggles to flat chronological.
-- **Filter grammar** (`/`): `tool:Bash hook:PostToolUse status:error dur:>500ms path:auth`;
-  bare text = fuzzy match. Filters persist across live/historical. Error-hop (`e`) +
-  sticky error tape.
-- **Inspector:** foldable JSON tree with a fixed key-facts header; syntax-aware value
-  rendering (commands, diffs, paths); `y`/`Y` yank; `r` raw escape hatch.
-- **Resilience:** malformed event → degraded row, never crash. `--plain` line-per-event
-  mode for screen readers / bug reports / piping.
+**Two-column slide model** at ≥80 cols. Two depth states:
+
+- **Browse** = `Sessions(36ch) │ Events(fill)` — pick a session, scan events.
+- **Drill** = `Events(fill) │ Inspector(46ch)` — Sessions hidden, Inspector revealed.
+
+**Events is the fixed pivot** — it never teleports; Sessions slides out left as you
+enter Drill. `Esc`/`h` pops exactly one step shallower (never quits). `<80` cols =
+single-pane stacked with breadcrumb, same one-at-a-time ladder.
+
+- **Event row:** `caret(1) · TIME(8) · ST(3) · HOOK(16) · TOOL(12) · TARGET(flex) · DUR(7)`.
+  The caret gutter is **always reserved** on every row (including the header) so columns
+  never shift on selection. Status = **glyph + color (redundant)**. Right-aligned DUR;
+  lifecycle rows donate DUR space to TARGET.
+- **Selection idiom:** solid caret `▸` + left accent bar + subtle background band
+  (never reverse-video). Focused pane = brighter band + info-accent caret. Unfocused =
+  dim band + grey caret ("where you'll land when you Tab"). Error rows use red accent bar.
+- **Type-aware truncation:** paths → basename-priority middle-elision; commands →
+  head-keep; quoted strings → head-keep + preserve close-quote. A dim `…` flags each
+  cut; its position encodes which end was dropped. List never wraps (including the
+  selected row). The Inspector soft-wraps and shows the full TARGET in its key-facts header.
+- **Session rows:** two-line selectable unit — line 1: `caret · live● · title`;
+  line 2: `project · recency · count`. Short ID moves to the status bar.
+- **Live, filter, fold, error-hop, yank, raw pager, `--plain`** all unchanged.
+- **Resilience:** malformed event → degraded row, never crash. `--plain` unaffected.
 
 ### Color & accessibility
 
 - Color is always **redundant** with glyph + position + label. Target the 16-color ANSI
-  palette (respects user theme), opt up to 256/truecolor if advertised. Use lipgloss
-  `AdaptiveColor` for light/dark. `NO_COLOR` / dumb-term render uses glyphs + bold +
-  reverse-video and text tags (`[OK]`/`[ERR]`/`[RUN]`) — designed first, not last.
+  palette (respects user theme). Use lipgloss `AdaptiveColor` for light/dark.
+- `NO_COLOR` / dumb-term render: caret `»` instead of `▸`, bracket tags `[✔]/[✘]/[▶]`,
+  no background bands — glyphs + text tags carry the full signal (designed first, not last).
 - Color-blind safe: success `✔` vs error `✘` differ in shape; never red/green adjacency
-  as the only difference. Honor `--no-animation` / reduced motion (no blinking).
+  as the only difference. Honor `--no-animation` / reduced motion (instant swaps).
 
-### Keymap (vim-style; depth × pane model)
+### Keymap (vim-style; two-column slide model — Phase 8)
 
-`Tab`/`1 2 3` move between panes · `j/k` `Ctrl-d/u` `g/G` motion · `Enter`/`l` deeper,
-`Esc`/`h` back · `f` follow · `space` pause · `/` filter · `n/N` matches · `e` next error ·
-`o` fold toggle · `y`/`Y` yank · `r` raw · `?` help overlay · `q` quit.
+`Tab` cycles visible panes (Browse: Sessions↔Events; Drill: Events↔Inspector).
+`1/2/3` jump to Sessions/Events/Inspector and cross the depth boundary when needed
+(`3` from Browse → enters Drill; `1` from Drill → pops out).
+`j/k` `Ctrl-d/u` `g/G` motion · `Enter`/`l` on event → Drill; on session → focus Events.
+`Esc`/`h` pops one step shallower (never quits) · `f` follow · `space` pause.
+`/` filter · `e/E` error-hop · `o` fold toggle · `y`/`Y` yank · `r` raw · `?` help · `q` quit.
 
 ---
 
@@ -260,14 +267,133 @@ daemon-as-buffer design):
 - [x] Multiple concurrent live sessions (keyed by `session_id`): one all-sessions stream,
       per-session liveness + summary updates, brand-new sessions appear live automatically.
 
-### Phase 7 — TUI comprehension
-- [ ] Filter grammar (`/`) with token + fuzzy matching; persistent filter chips.
-- [ ] Error-hop (`e`) + sticky error tape.
-- [ ] Folded Pre/Post operation view (default) with `o` toggle; pairing via `tool_use_id`
+### Phase 7 — TUI comprehension ✅
+- [x] Filter grammar (`/`) with token + fuzzy matching; persistent filter chips.
+- [x] Error-hop (`e`) + sticky error tape.
+- [x] Folded Pre/Post operation view (default) with `o` toggle; pairing via `tool_use_id`
       or heuristic fallback.
-- [ ] Syntax-aware inspector rendering (commands, diffs, paths); `y`/`Y` yank + toast.
-- [ ] `--plain` line-per-event mode (screen-reader / pipe / bug-report friendly).
-- [ ] Color tokens + light/dark adaptive theme; reduced-motion / `--no-animation`.
+- [x] Syntax-aware inspector rendering (commands, diffs, paths); `y`/`Y` yank + toast.
+- [x] `--plain` line-per-event mode (screen-reader / pipe / bug-report friendly).
+- [x] Color tokens + light/dark adaptive theme; reduced-motion / `--no-animation`.
+
+### Phase 8 — TUI redesign (two-column slide model)
+
+The TUI shipped (Phases 5–7) but the *interaction* model had real defects, surfaced in a
+2026-05-29 UX review. This phase replaces the layout, selection, and navigation model.
+**It supersedes** § "TUI UX" (the always-3-column master-detail) and the keymap depth
+model where they conflict. **Design reference: `docs/tui-mockup.html`** — UX-reviewed and
+screenshot-verified (both states, before/after, NO_COLOR, truncation-in-context).
+
+**Defects being fixed (root causes located in code):**
+- *"Random white highlighting"* — the selected row was rendered with full-width
+  `lipgloss.Reverse(true)` over a line already padded to pane width → a solid inverted bar
+  (`view.go` `focusMark`, `theme.go` `selection`).
+- *"Content shifts when moving the cursor"* — `renderEventRow` injected a `"> "` prefix
+  **only** on the selected row and subtracted it from content width, so the selected row's
+  columns kicked 2 cols right and stopped aligning (`format.go`).
+- **No scroll viewport** — Events/Sessions rendered every row then hard-truncated
+  (`padBlock`), so the cursor could scroll off-screen.
+- **Three inconsistent selection treatments** across the panes.
+- **Three columns at once felt crowded** at non-fullscreen widths.
+
+**8a · Two-column slide navigation** (replaces always-3-column).
+- **Browse** = `Sessions │ Events`; **Drill** = `Events │ Inspector` (Sessions hides,
+  Inspector reveals on the right). Default at ≥80 cols. `<80` stays single-pane stacked,
+  same ladder one pane at a time. No simultaneous-3-column mode (YAGNI; possible later
+  toggle for ultrawide).
+- **Drill trigger = `Enter`/`l` on an *event*.** `Enter` on a *session* just focuses
+  Events; Sessions stays visible (so you can hop between concurrent same-cwd sessions).
+- **Events is the fixed pivot** — it never teleports: Sessions slides out left, Events
+  takes the vacated slot, Inspector reveals right (one motion; instant swap under
+  reduced-motion).
+- **`Esc`/`h` pops exactly one step shallower, never quits:** filter-mode → Inspector →
+  Events (back to Browse) → Sessions → stop. `q` is the only quit.
+- **`Tab`** cycles visible panes; **`1`/`2`/`3`** jump to Sessions/Events/Inspector and
+  cross the depth boundary intentionally (`3` from Browse enters Drill; `1` from Drill
+  pops out).
+
+**8b · Stable, single selection idiom** (fixes the highlighting + shifting).
+- A **1-char caret gutter reserved on every row** (header included) so width never
+  changes. Selected row = solid caret (`▸`) + **left accent bar** + a **subtle background
+  band** (theme color, never reverse-video).
+- **Focus vs selection differ:** focused pane → brighter band + accent caret; unfocused →
+  dim band + grey caret ("where you'll land when you tab here").
+- Error-row selection uses the red accent bar; glyph + color + label stay redundant.
+- **Same idiom in all three panes.** Removes `focusMark` reverse-video and the per-row
+  `"> "` prefix entirely.
+
+**8c · Fixed-width columns + real viewport.**
+- Columns never reflow on selection: `TIME(8) · ST(1+gutter) · HOOK(16) · TOOL(12) ·
+  TARGET(flex) · DUR(right-aligned ≤7)`, caret gutter left of TIME on every row incl. the
+  header.
+- Add a **scroll viewport** to Events and Sessions that keeps the cursor visible (replaces
+  render-all + `padBlock` truncate).
+- DUR reserved at real content width; rows with no duration (SessionStart, Stop,
+  Notification) **donate DUR space to TARGET**.
+
+**8d · Session labels from cwd + ai-title** (fixes same-cwd ambiguity — running several
+concurrent sessions in one cwd, previously indistinguishable).
+- Lead each session row with the **generated title**, then dim `project · recency`
+  (+ event count). Short id moves to the status bar + inspector.
+- **Title source:** the `aiTitle` field of `type:"ai-title"` records in the session
+  transcript (Claude Code's LLM-generated, context-derived title), reached via
+  `transcript_path` — present in **every** hook payload and already captured in `Raw`.
+  Take the **last** ai-title in the file.
+- **Hard fallback chain (never blank):** `aiTitle` → `last-prompt`.`lastPrompt` → first
+  captured `UserPromptSubmit` prompt → `project · shortid`.
+- **Deliberate coupling, fenced:** this is the one place we read Claude Code's *internal,
+  undocumented* transcript format. Parse defensively — any error falls through the chain,
+  never fatal. Cache by transcript mtime. (A contained, justified exception to the
+  "never depend on payload schema" rule, because it degrades gracefully.)
+- **Backend:** `store.SessionInfo` gains `CWD` + `Title`; the existing first-event scan
+  (`store.go` `scanCountAndLastSeq`) also reads `cwd` + `transcript_path`; `GET /sessions`
+  returns both. `project = filepath.Base(cwd)`.
+
+**8e · Softened, type-aware truncation** (list clips, inspector wraps).
+- The **list clips but keeps the signal**, flagged by a dim `…` (muted token) in the last
+  cell (content clipped to width−1). **Marker position encodes which end dropped:**
+  trailing `…` = head kept; leading/interior `…` = path elision. NO_COLOR-safe (literal
+  glyph; `~` fallback), color-blind safe.
+- **Per value-type:** paths → basename-priority middle-elision
+  (`internal/auth/middleware.go` → `internal/…/middleware.go` → `…/middleware.go`; the
+  **basename is never sacrificed**); commands → head-keep; quoted strings → head-keep +
+  preserve close-quote; unknown → head-keep.
+- **List never wraps** (including the selected row — no inline expansion; reflow is the
+  enemy we just killed). The selected row's full TARGET shows in the **Inspector
+  key-facts header**.
+- **Inspector soft-wraps** long string values with a hanging indent — the lossless escape
+  hatch. A dim `…` is an affordance → `Enter` to inspect, `y`/`Y` to yank the literal.
+
+**8f · Accessibility carried through.** Caret/accent/band all degrade to glyph + text under
+NO_COLOR; `…` → `~` fallback; reduced-motion uses instant swaps (no slide); all status
+stays glyph + color + label redundant; `--plain` unaffected.
+
+**Tasks:**
+- [x] 8a Two-column slide nav: Browse/Drill states, Events-as-pivot reflow, `Esc`
+      depth-ladder (never quits), depth-aware `Tab`/`1`/`2`/`3`; `<80` stacked fallback;
+      reduced-motion instant swap.
+- [x] 8b Replace reverse-video selection with reserved caret gutter + accent bar + subtle
+      band; focus-vs-selection variants; unify across all three panes (remove `focusMark`
+      reverse-video + per-row `"> "` prefix).
+- [x] 8c Fixed-width columns independent of selection; scroll viewport for Events +
+      Sessions (cursor always visible); DUR→TARGET width donation.
+- [x] 8d `SessionInfo.CWD` + `.Title`; read `cwd` + `transcript_path` in first-event scan;
+      transcript `ai-title` reader with full fallback chain + mtime cache; `GET /sessions`
+      exposes both; title-led session rows.
+      Backend: `scanSession` reads `cwd` + `transcript_path` in one pass; `readTranscript`
+      (`transcript.go`) takes the last `ai-title` record; `resolveTitle` applies the chain
+      `aiTitle → lastPrompt → first UserPromptSubmit → "project · shortid"`, cached by
+      transcript mtime. Rendering: `sessionRowLines` uses `s.Title`/`s.CWD`/`s.ModTime` for
+      the two-line title-led row.
+- [x] 8e Type-aware truncation helpers (path / command / quoted / other) with dim `…`
+      marker + position semantics; inspector soft-wrap with hanging indent; selected-row
+      full TARGET in the inspector header.
+- [x] 8f NO_COLOR / `~` fallback, reduced-motion, color-blind redundancy preserved.
+- [x] Tests: selection-render stability (identical width selected vs not), viewport keeps
+      cursor visible, truncation per type + marker position, navigation ladder, title-led
+      rows with `FakeClient`. (ai-title transcript parse + `GET /sessions` backend tests
+      belong to the store/daemon agent — not checked here.)
+- [x] Reconcile § "TUI UX" + keymap prose with the shipped redesign.
 
 ---
 

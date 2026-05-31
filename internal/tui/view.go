@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/charmbracelet/lipgloss"
+	"jordandavis.dev/cc-harness-visualizer/internal/event"
 )
 
 // View renders the full terminal frame. It delegates to layout-specific helpers.
@@ -37,10 +38,12 @@ func (m model) View() string {
 
 	var content string
 	switch m.layout {
-	case LayoutWide:
-		content = m.viewWide(contentH)
-	case LayoutMedium:
-		content = m.viewMedium(contentH)
+	case LayoutBrowse:
+		if m.depthDrill {
+			content = m.viewDrill(contentH)
+		} else {
+			content = m.viewBrowse(contentH)
+		}
 	default:
 		content = m.viewNarrow(contentH)
 	}
@@ -58,23 +61,136 @@ func viewTooSmall(cols, rows int) string {
 // viewStatusBar renders the top bar: app name | daemon status | live status |
 // session | error tape. The live segment is a disconnect banner when the stream
 // is down, otherwise the heartbeat / idle indicator.
+//
+// All segments are styled with semantic tokens:
+//   - "cchv" → bold/bright
+//   - "● daemon" → success(green) for the bullet when OK
+//   - ":port" / separators → muted/faint
+//   - live indicator / rate → accent(blue) for ▮ rate, success for "live"
+//   - session label → muted
+//   - error tape → failure(red) when errors > 0, muted when 0
 func (m model) viewStatusBar() string {
-	appName := "cchv"
-	daemonStatus := m.daemonStatusText()
+	tok := themeFor(m.noColor)
+
+	// "cchv" — bold/bright.
+	var appName string
+	if m.noColor {
+		appName = "cchv"
+	} else {
+		appName = tok.header.Render("cchv")
+	}
+
+	sep := " │ "
+	if !m.noColor {
+		sep = " " + tok.muted.Render("│") + " "
+	}
+
+	daemonStatus := m.daemonStatusTextStyled(tok)
 
 	parts := []string{appName, daemonStatus}
-	if live := m.liveSegment(); live != "" {
+	if live := m.liveSegmentStyled(tok); live != "" {
 		parts = append(parts, live)
 	}
 	if m.selectedSession != "" {
-		parts = append(parts, "session: "+clip(m.selectedSession, 24))
+		label := m.selectedSessionLabel()
+		var sessionPart string
+		if m.noColor {
+			sessionPart = "session " + label
+		} else {
+			sessionPart = "session " + tok.muted.Render(label)
+		}
+		parts = append(parts, sessionPart)
 	}
 	// Error tape: always visible when events are loaded.
 	if len(m.events) > 0 {
-		parts = append(parts, m.errorTapeText())
+		parts = append(parts, m.errorTapeTextStyled(tok))
 	}
-	bar := strings.Join(parts, "  │  ")
-	return padRight(bar, m.width)
+	bar := strings.Join(parts, sep)
+	return ansiPadRight(bar, m.width)
+}
+
+// daemonStatusTextStyled renders the daemon status segment with color.
+func (m model) daemonStatusTextStyled(tok tokens) string {
+	plain := m.daemonStatusText()
+	if m.noColor {
+		return plain
+	}
+	// Color the "●" green when daemon is OK; entire segment muted otherwise.
+	if m.daemonOK {
+		// "● daemon :port" — bullet green, rest muted.
+		// daemonStatusText returns something like "● daemon :7842"
+		// Split on first space to isolate bullet.
+		idx := strings.Index(plain, " ")
+		if idx > 0 {
+			bullet := plain[:idx]
+			rest := plain[idx:]
+			return tok.success.Render(bullet) + tok.muted.Render(rest)
+		}
+		return tok.success.Render(plain)
+	}
+	return tok.muted.Render(plain)
+}
+
+// liveSegmentStyled renders the live segment with semantic color.
+func (m model) liveSegmentStyled(tok tokens) string {
+	if m.noColor {
+		return m.liveSegment()
+	}
+	if !m.streamUp && m.streamErr != "" {
+		return m.liveSegment() // disconnect banner — no extra styling needed
+	}
+	plain := m.liveStatusText()
+	if plain == "" {
+		return ""
+	}
+	// "live · ▮ 4/s" or "idle 2s"
+	// Color "live" green, "▮ N/s" accent, "·" muted.
+	if strings.HasPrefix(plain, "live") {
+		// Find the "·" separator.
+		idx := strings.Index(plain, " · ")
+		if idx > 0 {
+			livePart := tok.success.Render(plain[:idx])
+			sep := tok.muted.Render(" · ")
+			rest := plain[idx+3:]
+			// Color the rate part (▮ N/s) in accent.
+			return livePart + sep + tok.info.Render(rest)
+		}
+		return tok.success.Render(plain)
+	}
+	// "idle Ns" — muted.
+	return tok.muted.Render(plain)
+}
+
+// errorTapeTextStyled renders the error tape with color.
+func (m model) errorTapeTextStyled(tok tokens) string {
+	n := m.errorCount()
+	if m.noColor {
+		return m.errorTapeText()
+	}
+	if n == 0 {
+		return tok.muted.Render("no errors")
+	}
+	text := fmt.Sprintf("✘ %d error%s", n, pluralS(n))
+	return tok.failure.Render(text)
+}
+
+// selectedSessionLabel returns a short label for the status bar.
+// Prefers "Title… · shortID", falls back to clip(id, 24).
+func (m model) selectedSessionLabel() string {
+	for _, s := range m.sessions {
+		if s.ID == m.selectedSession {
+			short := s.ID
+			if len(short) > 7 {
+				short = short[:7]
+			}
+			if s.Title != "" {
+				title := clip(s.Title, 20)
+				return title + " · " + short
+			}
+			return clip(s.ID, 24)
+		}
+	}
+	return clip(m.selectedSession, 24)
 }
 
 // errorTapeText returns the sticky error indicator for the status bar.
@@ -131,10 +247,16 @@ func (m model) viewKeyBar() string {
 		if !m.foldedView {
 			fold = "o:flat"
 		}
-		hints = []string{"j/k:move", "enter:inspect", follow, "G:live",
-			"/:filter", "e:err-hop", fold, "esc:back", "?:help", "q:quit"}
+		if m.depthDrill {
+			hints = []string{"j/k:scroll", "y:yank", "Y:yank-raw", "r:raw",
+				"tab:◂events", "esc:◂browse", follow, fold, "?:help", "q:quit"}
+		} else {
+			hints = []string{"j/k:move", "enter:open▸", "tab:◂sessions",
+				follow, "G:live", "/:filter", "e:err-hop", fold, "?:help", "q:quit"}
+		}
 	case paneInspector:
-		hints = []string{"j/k:scroll", "y:yank", "Y:yank-raw", "r:raw", "esc:back", "?:help", "q:quit"}
+		hints = []string{"j/k:scroll", "y:yank", "Y:yank-raw", "r:raw",
+			"tab:◂events", "esc:◂back", "?:help", "q:quit"}
 	}
 	bar := strings.Join(hints, "  ")
 
@@ -146,61 +268,11 @@ func (m model) viewKeyBar() string {
 	return padRight(bar, m.width)
 }
 
-// --- Layout: Wide (≥120) ----------------------------------------------------
+// --- Browse layout (≥80 cols, depthDrill==false) ----------------------------
+// Sessions(36ch) │ Events(fill)
 
-func (m model) viewWide(contentH int) string {
-	sw, ew, iw := paneWidths(LayoutWide, m.width)
-	sessions := m.viewSessionsPane(sw, contentH)
-	events := m.viewEventsPane(ew, contentH)
-	inspector := m.viewInspectorPane(iw, contentH)
-
-	// Join with dividers.
-	sLines := splitLines(sessions, contentH)
-	eLines := splitLines(events, contentH)
-	iLines := splitLines(inspector, contentH)
-
-	var rows []string
-	for i := 0; i < contentH; i++ {
-		sl := getLine(sLines, i, sw)
-		el := getLine(eLines, i, ew)
-		il := getLine(iLines, i, iw)
-		rows = append(rows, sl+"│"+el+"│"+il)
-	}
-	return strings.Join(rows, "\n")
-}
-
-// --- Layout: Medium (80–119) -----------------------------------------------
-
-func (m model) viewMedium(contentH int) string {
-	sw, ew, iw := paneWidths(LayoutMedium, m.width)
-
-	if m.focusedPane == paneInspector || m.inspectorOpen {
-		// Show events + inspector as stacked drawer.
-		inspectorH := min(contentH/2, 20)
-		eventsH := contentH - inspectorH - 1 // 1 for drawer separator
-
-		sessions := m.viewSessionsPane(sw, contentH)
-		events := m.viewEventsPane(ew, eventsH)
-		inspector := m.viewInspectorPane(iw, inspectorH)
-
-		sLines := splitLines(sessions, contentH)
-		eLines := splitLines(events, eventsH)
-		iLines := splitLines(inspector, inspectorH)
-
-		var rows []string
-		for i := 0; i < eventsH; i++ {
-			sl := getLine(sLines, i, sw)
-			el := getLine(eLines, i, ew)
-			rows = append(rows, sl+"│"+el)
-		}
-		rows = append(rows, strings.Repeat("─", m.width))
-		for i := 0; i < inspectorH; i++ {
-			il := getLine(iLines, i, iw)
-			rows = append(rows, padRight(il, m.width))
-		}
-		return strings.Join(rows, "\n")
-	}
-
+func (m model) viewBrowse(contentH int) string {
+	sw, ew, _ := paneWidths(LayoutBrowse, m.width)
 	sessions := m.viewSessionsPane(sw, contentH)
 	events := m.viewEventsPane(ew, contentH)
 
@@ -216,7 +288,27 @@ func (m model) viewMedium(contentH int) string {
 	return strings.Join(rows, "\n")
 }
 
-// --- Layout: Narrow (<80) --------------------------------------------------
+// --- Drill layout (≥80 cols, depthDrill==true) ------------------------------
+// Events(fill) │ Inspector(46ch)
+
+func (m model) viewDrill(contentH int) string {
+	ew, iw := paneWidthsDrill(m.width)
+	events := m.viewEventsPane(ew, contentH)
+	inspector := m.viewInspectorPane(iw, contentH)
+
+	eLines := splitLines(events, contentH)
+	iLines := splitLines(inspector, contentH)
+
+	var rows []string
+	for i := 0; i < contentH; i++ {
+		el := getLine(eLines, i, ew)
+		il := getLine(iLines, i, iw)
+		rows = append(rows, el+"│"+il)
+	}
+	return strings.Join(rows, "\n")
+}
+
+// --- Narrow layout (<80 cols) -----------------------------------------------
 
 func (m model) viewNarrow(contentH int) string {
 	breadcrumb := m.viewBreadcrumb()
@@ -240,25 +332,100 @@ func (m model) viewNarrow(contentH int) string {
 func (m model) viewBreadcrumb() string {
 	parts := []string{"Sessions"}
 	if m.selectedSession != "" {
-		parts = append(parts, clip(m.selectedSession, 20))
-	}
-	switch m.focusedPane {
-	case paneEvents:
-		if m.selectedSession != "" {
-			parts = []string{"Sessions", clip(m.selectedSession, 20), "Events"}
+		title := clip(m.selectedSession, 20)
+		for _, s := range m.sessions {
+			if s.ID == m.selectedSession && s.Title != "" {
+				title = clip(s.Title, 20)
+				break
+			}
 		}
-	case paneInspector:
-		parts = append(parts, "Inspector")
+		switch m.focusedPane {
+		case paneEvents:
+			parts = []string{"Sessions", title, "Events"}
+		case paneInspector:
+			parts = []string{"Sessions", title, "Events", "Inspector"}
+		default:
+			parts = append(parts, title)
+		}
 	}
 	return strings.Join(parts, " > ")
 }
 
 // --- Pane renderers ---------------------------------------------------------
 
-// viewSessionsPane renders the sessions list pane.
+// paneTitleLine renders a styled pane title line of exactly w chars.
+// When focused, the title uses the header style (bold/bright).
+// When unfocused, the title is muted (dim grey).
+// badge is an optional right-aligned plain-text badge (e.g. "↓ 3 new"); it
+// will be styled in the chip/running token (yellow) when noColor=false.
+func paneTitleLine(text, badge string, w int, focused bool, noColor bool) string {
+	tok := themeFor(noColor)
+
+	var result string
+	if badge == "" {
+		// Simple case: just pad and style the title.
+		plain := padRight(text, w)
+		if noColor {
+			return plain
+		}
+		if focused {
+			return tok.header.Render(plain)
+		}
+		return tok.muted.Render(plain)
+	}
+
+	// Badge present: title gets styled; badge gets chip color (yellow).
+	// Compute spacing using plain-text widths.
+	titlePlainLen := utf8.RuneCountInString(text)
+	badgePlainLen := utf8.RuneCountInString(badge)
+	pad := w - titlePlainLen - badgePlainLen
+	if pad < 1 {
+		pad = 1
+	}
+
+	// Truncate title if it would leave no room.
+	if titlePlainLen+1+badgePlainLen > w {
+		maxTitle := w - 1 - badgePlainLen
+		if maxTitle < 0 {
+			maxTitle = 0
+		}
+		text = padRight(text, maxTitle)
+		pad = 1
+	}
+
+	if noColor {
+		result = text + strings.Repeat(" ", pad) + badge
+		return padRight(result, w)
+	}
+
+	var styledTitle string
+	if focused {
+		styledTitle = tok.header.Render(text)
+	} else {
+		styledTitle = tok.muted.Render(text)
+	}
+	styledBadge := tok.chip.Render(badge)
+
+	result = styledTitle + strings.Repeat(" ", pad) + styledBadge
+	return ansiPadRight(result, w)
+}
+
+// viewSessionsPane renders the sessions list pane (Phase 8b/8d + 8-visual).
+//
+// Each session occupies two display lines (title + meta) as a single selectable
+// unit. The caret gutter is reserved on both lines — same idiom as the events
+// pane (no reverse-video, no "> " prefix).
+//
+// ANSI safety: selection bands are applied to already-padded plain lines before
+// any further processing by ansiPadBlock.
 func (m model) viewSessionsPane(w, h int) string {
-	title := padRight("SESSIONS", w)
+	tok := themeFor(m.noColor)
+	focused := m.focusedPane == paneSessions
+
+	title := paneTitleLine("SESSIONS", "", w, focused, m.noColor)
 	lines := []string{title}
+
+	now := m.now()
 
 	switch {
 	case m.sessionsErr != nil:
@@ -277,45 +444,84 @@ func (m model) viewSessionsPane(w, h int) string {
 		lines = append(lines, "")
 		lines = append(lines, clip("Daemon: "+m.daemonStatusText(), w))
 	default:
-		for i, s := range m.sessions {
-			// Row = cursor(2) + live-marker(2) + label. Live sessions get a ●;
-			// others a blank of equal width so labels stay column-aligned.
-			cursor := "  "
-			if i == m.sessionCursor {
-				cursor = "> "
+		// Compute viewport window.
+		// Each session is 2 physical lines; title row is 1.
+		availH := h - 1 // subtract the "SESSIONS" title row
+		visibleN := availH / 2
+		if visibleN < 1 {
+			visibleN = 1
+		}
+		top := m.sessionTop
+		if top < 0 {
+			top = 0
+		}
+		if top+visibleN > len(m.sessions) {
+			top = max(0, len(m.sessions)-visibleN)
+		}
+		end := top + visibleN
+		if end > len(m.sessions) {
+			end = len(m.sessions)
+		}
+
+		for i := top; i < end; i++ {
+			s := m.sessions[i]
+			selected := i == m.sessionCursor
+			live := m.isLive(s.ID)
+
+			// Build styled lines (caret, live●, title bold/dim, meta muted).
+			l0, l1 := sessionRowLinesStyled(s, w, selected, focused, live, now, m.noColor)
+
+			// Apply selection band (background) AFTER lines are at correct width.
+			// The lines from sessionRowLinesStyled are already ansiPadRight'd to w.
+			if selected && !m.noColor {
+				if focused {
+					l0 = tok.selBandFocused.Render(l0)
+					l1 = tok.selBandFocused.Render(l1)
+				} else {
+					l0 = tok.selBand.Render(l0)
+					l1 = tok.selBand.Render(l1)
+				}
 			}
-			marker := "  "
-			if m.isLive(s.ID) {
-				marker = "● "
-			}
-			label := padRight(cursor+marker+sessionLabel(s.ID, s.EventCount, w-4), w)
-			if m.focusedPane == paneSessions && i == m.sessionCursor {
-				label = focusMark(label, m.noColor)
-			}
-			lines = append(lines, label)
+
+			lines = append(lines, l0, l1)
 		}
 	}
 
-	return padBlock(lines, w, h)
+	return ansiPadBlock(lines, w, h)
 }
 
-// viewEventsPane renders the events list pane.
+// viewEventsPane renders the events list pane (Phase 8b/8c + 8-visual).
+//
+// The caret gutter is reserved on every row (including the header) so columns
+// never shift on selection. The selected row gets a background band via the
+// theme tokens (never reverse-video). A scroll viewport keeps the cursor visible.
+//
+// ANSI safety: renderEventRow returns a string whose plain width == w. The
+// selection band is applied AFTER padding. ansiPadBlock is used for final assembly
+// so ANSI-bearing lines are not rune-sliced.
 func (m model) viewEventsPane(w, h int) string {
-	// Title carries a follow/pause indicator and, when paused, the count of
-	// new events buffered below the viewport (↓ N new).
+	tok := themeFor(m.noColor)
+	focused := m.focusedPane == paneEvents
+
+	// Title: show session label and optional "↓ N new" badge.
 	titleText := "EVENTS"
 	if m.selectedSession != "" {
-		titleText = "EVENTS  " + clip(m.selectedSession, w-9)
-	}
-	if !m.follow && m.pendingCount > 0 {
-		badge := fmt.Sprintf("↓ %d new", m.pendingCount)
-		pad := w - len([]rune(titleText)) - len([]rune(badge))
-		if pad < 1 {
-			pad = 1
+		sessionLabel := clip(m.selectedSession, w-9)
+		for _, s := range m.sessions {
+			if s.ID == m.selectedSession && s.Title != "" {
+				sessionLabel = clip(s.Title, w-9)
+				break
+			}
 		}
-		titleText = titleText + strings.Repeat(" ", pad) + badge
+		titleText = "EVENTS  " + sessionLabel
 	}
-	lines := []string{padRight(titleText, w)}
+	var badge string
+	if !m.follow && m.pendingCount > 0 {
+		badge = fmt.Sprintf("↓ %d new", m.pendingCount)
+	}
+
+	title := paneTitleLine(titleText, badge, w, focused, m.noColor)
+	lines := []string{title}
 
 	switch {
 	case m.selectedSession == "":
@@ -330,58 +536,126 @@ func (m model) viewEventsPane(w, h int) string {
 		lines = append(lines, "")
 		lines = append(lines, clip("No events in this session.", w))
 	default:
-		// Header row.
-		lines = append(lines, renderEventRowHeader(w))
+		// Header row: plain text, rendered muted.
+		headerPlain := renderEventRowHeader(w)
+		var headerLine string
+		if m.noColor {
+			headerLine = headerPlain
+		} else {
+			headerLine = tok.muted.Render(headerPlain)
+		}
+		lines = append(lines, headerLine)
+
 		rows := m.visibleRows()
-		for i, dr := range rows {
+
+		// Compute scroll viewport.
+		// h rows total; 1 title + 1 header = 2 overhead; rest for data rows.
+		headerRows := 2 // title + column header
+		dataH := h - headerRows
+		if dataH < 1 {
+			dataH = 1
+		}
+
+		top := m.eventTop
+		if top < 0 {
+			top = 0
+		}
+		end := top + dataH
+		if end > len(rows) {
+			end = len(rows)
+		}
+
+		for i := top; i < end; i++ {
+			dr := rows[i]
 			row := buildDisplayEventRow(dr)
 			selected := i == m.eventCursor
+
+			// renderEventRow returns an ANSI-width-correct string (plain width == w).
 			rendered := renderEventRow(row, w, m.noColor, selected)
-			if m.focusedPane == paneEvents && selected {
-				rendered = focusMark(rendered, m.noColor)
+
+			// Apply selection band AFTER padding — the rendered string is already at w.
+			if selected && !m.noColor {
+				if focused {
+					rendered = tok.selBandFocused.Render(rendered)
+				} else {
+					rendered = tok.selBand.Render(rendered)
+				}
 			}
-			lines = append(lines, padRight(rendered, w))
+
+			lines = append(lines, rendered)
 		}
 	}
 
-	return padBlock(lines, w, h)
+	return ansiPadBlock(lines, w, h)
 }
 
-// viewInspectorPane renders the inspector pane.
+// viewInspectorPane renders the inspector pane (Phase 8e — soft-wrap values).
+//
+// Key-facts labels are muted; values are bright/default. The divider is faint.
+// JSON syntax coloring is applied by inspectLinesSoftWrap.
 func (m model) viewInspectorPane(w, h int) string {
-	title := padRight("INSPECTOR", w)
+	tok := themeFor(m.noColor)
+	focused := m.focusedPane == paneInspector
+
+	title := paneTitleLine("INSPECTOR", "", w, focused, m.noColor)
 	lines := []string{title}
 
 	ev := m.selectedEvent()
 	if ev == nil {
 		lines = append(lines, "")
 		lines = append(lines, clip("Select an event to inspect.", w))
-		return padBlock(lines, w, h)
+		return ansiPadBlock(lines, w, h)
 	}
 
-	// Key-facts header.
-	lines = append(lines, padRight(fmt.Sprintf("Hook:    %s", ev.HookEvent), w))
-	lines = append(lines, padRight(fmt.Sprintf("Tool:    %s", ev.ToolName), w))
-	lines = append(lines, padRight(fmt.Sprintf("Session: %s", clip(ev.SessionID, w-9)), w))
-	lines = append(lines, padRight(fmt.Sprintf("Time:    %s", ev.CapturedAt.Local().Format("2006-01-02 15:04:05")), w))
-	lines = append(lines, padRight(fmt.Sprintf("Seq:     %d", ev.Seq), w))
-	lines = append(lines, strings.Repeat("─", w))
+	dr, _ := m.selectedDisplayRow()
 
-	// Syntax-aware inspector body (commands, diffs, paths rendered distinctly).
-	lines = append(lines, padRight("Payload:", w))
-	lines = append(lines, inspectLines(ev, w)...)
+	// Key-facts header: labels muted, values bright.
+	addKV := func(label, value string) {
+		plain := fmt.Sprintf("%-8s%s", label, value)
+		if m.noColor {
+			lines = append(lines, padRight(plain, w))
+			return
+		}
+		styledLabel := tok.muted.Render(fmt.Sprintf("%-8s", label))
+		styledValue := value // default fg
+		lines = append(lines, ansiPadRight(styledLabel+styledValue, w))
+	}
 
-	// Apply scroll offset.
-	startLine := 1 // keep header visible
-	jsonStart := 8 // lines above json content
-	scrollable := lines[jsonStart:]
+	addKV("Hook", ev.HookEvent)
+	addKV("Tool", ev.ToolName)
+	if dr.IsPair && dr.Duration > 0 {
+		addKV("Dur", formatDuration(dr.Duration))
+	}
+	addKV("Time", ev.CapturedAt.Local().Format("2006-01-02 15:04:05"))
+	addKV("Seq", fmt.Sprintf("%d", ev.Seq))
+
+	// Target gist in key-facts.
+	gist := targetGist(ev)
+	if gist != "" {
+		addKV("Target", gist)
+	}
+
+	// Divider: faint.
+	divider := strings.Repeat("─", w)
+	if m.noColor {
+		lines = append(lines, divider)
+	} else {
+		lines = append(lines, tok.muted.Render(divider))
+	}
+
+	// Syntax-aware inspector body with soft-wrap (Phase 8e).
+	lines = append(lines, inspectLinesSoftWrap(ev, w, m.noColor)...)
+
+	// Apply scroll offset (keep key-facts header visible).
+	const fixedHeaderRows = 1 // just the title
+	fixedLines := lines[:fixedHeaderRows]
+	scrollable := lines[fixedHeaderRows:]
 	if m.inspectorScroll > 0 && m.inspectorScroll < len(scrollable) {
 		scrollable = scrollable[m.inspectorScroll:]
 	}
-	visible := append(lines[:startLine], lines[1:jsonStart]...)
-	visible = append(visible, scrollable...)
+	visible := append(fixedLines, scrollable...)
 
-	return padBlock(visible, w, h)
+	return ansiPadBlock(visible, w, h)
 }
 
 // viewHelp renders the ? help overlay.
@@ -389,17 +663,24 @@ func (m model) viewHelp() string {
 	lines := []string{
 		padRight("HELP — cchv keyboard shortcuts", m.width),
 		padRight("", m.width),
-		padRight("  Tab / 1 2 3    Switch pane focus", m.width),
+		padRight("  Tab / 1 2 3    Switch pane focus (depth-aware)", m.width),
 		padRight("  j / k          Move cursor up/down", m.width),
 		padRight("  Ctrl-d / Ctrl-u  Page down / page up", m.width),
 		padRight("  g / G          Jump to first / last", m.width),
-		padRight("  Enter / l      Select / go deeper", m.width),
-		padRight("  Esc / h        Go back", m.width),
+		padRight("  Enter / l      On event: enter Drill (Inspector); on session: focus Events", m.width),
+		padRight("  Esc / h        Pop one step shallower (never quits)", m.width),
+		padRight("  1              Sessions (exit Drill if needed)", m.width),
+		padRight("  2              Events (either depth)", m.width),
+		padRight("  3              Inspector (enter Drill if needed)", m.width),
 		padRight("  f              Toggle tail-follow (live)", m.width),
 		padRight("  G              Jump to latest & re-follow", m.width),
 		padRight("  space          Pause follow", m.width),
 		padRight("  r              Raw JSON pager (inspector)", m.width),
-		padRight("  q              Quit", m.width),
+		padRight("  y / Y          Yank value / raw event", m.width),
+		padRight("  /              Filter events", m.width),
+		padRight("  e / E          Hop to next / prev error", m.width),
+		padRight("  o              Toggle folded / flat event view", m.width),
+		padRight("  q              Quit (Esc never quits)", m.width),
 		padRight("  ?              Toggle this help", m.width),
 		padRight("", m.width),
 		padRight("  Press any key to dismiss.", m.width),
@@ -445,6 +726,14 @@ func formatJSONLines(raw json.RawMessage, w int) []string {
 	return lines
 }
 
+// inspectLinesSoftWrap soft-wraps long string values in the inspector.
+// Long values are wrapped onto continuation lines with a hanging indent aligned
+// under the value's start column, so nothing is clipped in the inspector.
+// noColor controls whether syntax coloring is applied.
+func inspectLinesSoftWrap(ev *event.Event, w int, noColor bool) []string {
+	return inspectLinesColored(ev, w, noColor)
+}
+
 // splitLines splits a multi-line string into a slice of lines.
 func splitLines(s string, capacity int) []string {
 	lines := strings.Split(s, "\n")
@@ -457,15 +746,18 @@ func splitLines(s string, capacity int) []string {
 	return lines
 }
 
-// getLine returns lines[i] padded to w, or a blank padded line if out of bounds.
+// getLine returns lines[i] padded to w using ANSI-aware measurement,
+// or a blank padded line if out of bounds.
+// ANSI safety: uses ansiPadRight so styled lines are not rune-sliced.
 func getLine(lines []string, i, w int) string {
 	if i >= len(lines) {
 		return strings.Repeat(" ", w)
 	}
-	return padRight(lines[i], w)
+	return ansiPadRight(lines[i], w)
 }
 
-// padBlock pads a slice of lines to exactly h lines of width w.
+// padBlock pads a slice of plain-text lines to exactly h lines of width w.
+// For plain (unstyled) lines only. Use ansiPadBlock for ANSI-bearing lines.
 func padBlock(lines []string, w, h int) string {
 	for len(lines) < h {
 		lines = append(lines, strings.Repeat(" ", w))
@@ -479,11 +771,19 @@ func padBlock(lines []string, w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-// focusMark applies visual focus highlight to a line. In noColor mode this
-// adds a bold "[*]" prefix. In color mode it uses reverse-video via lipgloss.
-func focusMark(line string, noColor bool) string {
-	if noColor {
-		return line
+// ansiPadBlock pads a slice of lines (which may contain ANSI escapes) to exactly
+// h lines, each with visible width w. Uses ansiPadRight for width measurement and
+// padding so styled lines are never rune-sliced. This is the ANSI-safe replacement
+// for padBlock when lines may be styled.
+func ansiPadBlock(lines []string, w, h int) string {
+	for len(lines) < h {
+		lines = append(lines, strings.Repeat(" ", w))
 	}
-	return lipgloss.NewStyle().Reverse(true).Render(line)
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	for i, l := range lines {
+		lines[i] = ansiPadRight(l, w)
+	}
+	return strings.Join(lines, "\n")
 }

@@ -201,29 +201,45 @@ func TestKeyJDoesNotExceedBounds(t *testing.T) {
 	}
 }
 
+// TestTabCyclesFocus verifies Tab behavior under the Phase 8 depth model.
+// In Browse (depthDrill=false): Tab cycles Sessions ↔ Events only.
+// In Drill (depthDrill=true): Tab cycles Events ↔ Inspector only.
 func TestTabCyclesFocus(t *testing.T) {
 	m := newModel(fixtureClient(), false, false)
-	m.width = 140
+	m.width = 110
 	m.height = 24
-	m.layout = LayoutWide
+	m.layout = LayoutBrowse
+	m.depthDrill = false
 	m.focusedPane = paneSessions
 
+	// Browse: Tab Sessions → Events.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(model)
 	if m2.focusedPane != paneEvents {
-		t.Errorf("after tab: focus = %v, want paneEvents", m2.focusedPane)
+		t.Errorf("Browse Tab from Sessions: focus = %v, want paneEvents", m2.focusedPane)
 	}
 
+	// Browse: Tab Events → Sessions (wraps back).
 	updated2, _ := m2.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m3 := updated2.(model)
-	if m3.focusedPane != paneInspector {
-		t.Errorf("after tab×2: focus = %v, want paneInspector", m3.focusedPane)
+	if m3.focusedPane != paneSessions {
+		t.Errorf("Browse Tab from Events: focus = %v, want paneSessions", m3.focusedPane)
 	}
 
+	// Drill: Tab Events → Inspector.
+	m3.depthDrill = true
+	m3.focusedPane = paneEvents
 	updated3, _ := m3.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m4 := updated3.(model)
-	if m4.focusedPane != paneSessions {
-		t.Errorf("after tab×3: focus = %v, want paneSessions (wrapped)", m4.focusedPane)
+	if m4.focusedPane != paneInspector {
+		t.Errorf("Drill Tab from Events: focus = %v, want paneInspector", m4.focusedPane)
+	}
+
+	// Drill: Tab Inspector → Events (wraps back).
+	updated4, _ := m4.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m5 := updated4.(model)
+	if m5.focusedPane != paneEvents {
+		t.Errorf("Drill Tab from Inspector: focus = %v, want paneEvents", m5.focusedPane)
 	}
 }
 

@@ -62,18 +62,25 @@ type model struct {
 	width  int
 	height int
 
-	// layout
+	// layout: LayoutBrowse, LayoutNarrow, or LayoutTooSmall (see layout.go).
 	layout Layout
+
+	// depthDrill is true when we are in Drill mode (Events │ Inspector).
+	// In Browse mode (false) the display is Sessions │ Events.
+	// This is orthogonal to layout — it can only be true when layout==LayoutBrowse.
+	depthDrill bool
 
 	// sessions pane state
 	sessions      []store.SessionInfo
 	sessionCursor int // index into sessions
+	sessionTop    int // scroll-viewport top for the sessions pane
 	sessionsErr   error
 
 	// events pane state
 	selectedSession string
 	events          []*event.Event
 	eventCursor     int // index into events
+	eventTop        int // scroll-viewport top for the events pane
 	eventsErr       error
 	eventsLoading   bool
 
@@ -244,6 +251,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.err == nil {
 				m.events = msg.events
 				m.eventCursor = 0
+				m.eventTop = 0
 			}
 		}
 		return m, nil
@@ -267,6 +275,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateKeys handles keyboard input in normal (non-pager, non-help, non-filter) mode.
 func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Clear transient toast on any keypress.
+	m.statusMsg = ""
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -298,21 +309,36 @@ func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clampEventCursor()
 		return m, nil
 
-	// pane switching
+	// --- depth-aware pane switching (8a) ---
+
 	case "tab":
-		m.focusedPane = nextPane(m.focusedPane, m.layout)
+		m.focusedPane = nextPane(m.focusedPane, m.layout, m.depthDrill)
 		return m, nil
+
 	case "1":
+		// Jump to Sessions; if in Drill, pop back to Browse first.
+		if m.depthDrill {
+			m.depthDrill = false
+		}
 		m.focusedPane = paneSessions
 		return m, nil
+
 	case "2":
+		// Jump to Events in either depth state.
 		m.focusedPane = paneEvents
 		return m, nil
+
 	case "3":
-		if m.layout == LayoutWide {
-			m.focusedPane = paneInspector
+		// Jump to Inspector; if in Browse, enter Drill first.
+		if !m.depthDrill && m.layout == LayoutBrowse {
+			m.depthDrill = true
 		}
+		m.focusedPane = paneInspector
 		return m, nil
+
+	case "esc":
+		// Esc pops exactly one step shallower; never quits.
+		return m.popDepth(), nil
 	}
 
 	switch m.focusedPane {
@@ -326,32 +352,58 @@ func (m model) updateKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// popDepth pops one level in the navigation ladder:
+//
+//	filter mode → handled before popDepth is called
+//	Inspector (Drill) → Events (back to Browse)
+//	Events (Browse) → Sessions
+//	Sessions → stop (no-op)
+//
+// Esc never quits.
+func (m model) popDepth() model {
+	switch m.focusedPane {
+	case paneInspector:
+		m.depthDrill = false
+		m.focusedPane = paneEvents
+	case paneEvents:
+		m.focusedPane = paneSessions
+	// Sessions: no further back, just stay
+	}
+	return m
+}
+
 // updateSessionsPane handles keys when the sessions pane is focused.
 func (m model) updateSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
 		if m.sessionCursor < len(m.sessions)-1 {
 			m.sessionCursor++
+			m.scrollSessionViewport()
 		}
 		return m, nil
 	case "k", "up":
 		if m.sessionCursor > 0 {
 			m.sessionCursor--
+			m.scrollSessionViewport()
 		}
 		return m, nil
 	case "g":
 		m.sessionCursor = 0
+		m.sessionTop = 0
 		return m, nil
 	case "G":
 		if len(m.sessions) > 0 {
 			m.sessionCursor = len(m.sessions) - 1
+			m.scrollSessionViewport()
 		}
 		return m, nil
 	case "ctrl+d":
 		m.sessionCursor = min(m.sessionCursor+10, max(0, len(m.sessions)-1))
+		m.scrollSessionViewport()
 		return m, nil
 	case "ctrl+u":
 		m.sessionCursor = max(m.sessionCursor-10, 0)
+		m.scrollSessionViewport()
 		return m, nil
 	case "enter", "l":
 		if len(m.sessions) == 0 {
@@ -362,10 +414,15 @@ func (m model) updateSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedSession = sid
 			m.events = nil
 			m.eventCursor = 0
+			m.eventTop = 0
 			m.eventsLoading = true
 		}
+		// Enter on a session just focuses Events; stays in Browse (8a).
 		m.focusedPane = paneEvents
 		return m, cmdLoadEvents(m.client, sid, 0)
+	case "h":
+		// h in sessions pane: no further back.
+		return m, nil
 	}
 	return m, nil
 }
@@ -374,6 +431,9 @@ func (m model) updateSessionsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 //
 // Manual vertical motion auto-pauses follow (the tail-f model); G snaps back to
 // the latest event and re-follows, clearing the buffered-new count.
+//
+// Phase 8a: Enter / l on an event enters Drill depth (reveals Inspector).
+// Esc / h pops back: Inspector → Events → Sessions.
 func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.visibleRows()
 	n := len(rows)
@@ -382,15 +442,18 @@ func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.follow = false
 		if n > 0 && m.eventCursor < n-1 {
 			m.eventCursor++
+			m.scrollEventViewport()
 		}
 	case "k", "up":
 		m.follow = false
 		if m.eventCursor > 0 {
 			m.eventCursor--
+			m.scrollEventViewport()
 		}
 	case "g":
 		m.follow = false
 		m.eventCursor = 0
+		m.eventTop = 0
 	case " ", "space":
 		// Explicit pause.
 		m.follow = false
@@ -399,20 +462,30 @@ func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.pendingCount = 0
 		if n > 0 {
 			m.eventCursor = n - 1
+			m.scrollEventViewport()
 		}
 	case "ctrl+d":
 		m.follow = false
 		m.eventCursor = min(m.eventCursor+10, max(0, n-1))
+		m.scrollEventViewport()
 	case "ctrl+u":
 		m.follow = false
 		m.eventCursor = max(m.eventCursor-10, 0)
+		m.scrollEventViewport()
 	case "enter", "l":
-		if n > 0 {
+		// Enter on an event enters Drill depth (8a).
+		if n > 0 && m.layout == LayoutBrowse {
+			m.depthDrill = true
+			m.focusedPane = paneInspector
+			m.inspectorOpen = true
+		} else if n > 0 {
+			// Narrow: just go to inspector pane.
 			m.focusedPane = paneInspector
 			m.inspectorOpen = true
 		}
 	case "esc", "h":
-		m.focusedPane = paneSessions
+		// Pop one step shallower.
+		m = m.popDepth()
 	case "e":
 		// Error-hop forward: next error row (wrapping).
 		m.follow = false
@@ -427,9 +500,6 @@ func (m model) updateEventsPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // updateInspectorPane handles keys when the inspector pane is focused.
 func (m model) updateInspectorPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	// Clear any transient toast from a previous action.
-	m.statusMsg = ""
-
 	switch msg.String() {
 	case "j", "down":
 		m.inspectorScroll++
@@ -459,7 +529,8 @@ func (m model) updateInspectorPane(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "esc", "h":
-		m.focusedPane = paneEvents
+		// Pop back from Inspector → Events + leave Drill.
+		m = m.popDepth()
 	}
 	return m, nil
 }
@@ -531,6 +602,7 @@ func (m *model) clampEventCursor() {
 	if m.eventCursor >= n {
 		m.eventCursor = n - 1
 	}
+	m.scrollEventViewport()
 }
 
 // visibleRows returns the display rows visible under the current filter and
@@ -590,6 +662,7 @@ func (m *model) hopToError(dir int) {
 	for i != start {
 		if rows[i].EffectiveStatus() == statusError {
 			m.eventCursor = i
+			m.scrollEventViewport()
 			return
 		}
 		i = (i + dir + len(rows)) % len(rows)
@@ -600,18 +673,91 @@ func (m *model) hopToError(dir int) {
 	}
 }
 
-// nextPane cycles focus through the panes available in the current layout.
-func nextPane(current pane, layout Layout) pane {
-	switch layout {
-	case LayoutWide:
+// nextPane cycles focus through the panes currently visible at the given depth.
+//
+// Browse (depthDrill==false): Sessions ↔ Events
+// Drill  (depthDrill==true):  Events ↔ Inspector
+// Narrow: same as Browse (Sessions ↔ Events ↔ Inspector one at a time).
+func nextPane(current pane, layout Layout, drill bool) pane {
+	if layout == LayoutNarrow {
 		return (current + 1) % 3
-	default:
-		// 2-pane (medium) or narrow: cycle sessions↔events
-		if current == paneSessions {
-			return paneEvents
-		}
-		return paneSessions
 	}
+	if drill {
+		// Drill: cycle Events ↔ Inspector.
+		if current == paneEvents {
+			return paneInspector
+		}
+		return paneEvents
+	}
+	// Browse: cycle Sessions ↔ Events.
+	if current == paneSessions {
+		return paneEvents
+	}
+	return paneSessions
+}
+
+// scrollEventViewport updates eventTop so that eventCursor is within the
+// visible window [eventTop, eventTop+visibleH).
+//
+// visibleH is computed from m.height: subtract 2 bars, 1 pane-title row, 1
+// header row. Falls back to 1 if the result would be non-positive.
+func (m *model) scrollEventViewport() {
+	visibleH := m.eventsVisibleH()
+	if visibleH < 1 {
+		visibleH = 1
+	}
+	if m.eventCursor < m.eventTop {
+		m.eventTop = m.eventCursor
+	}
+	if m.eventCursor >= m.eventTop+visibleH {
+		m.eventTop = m.eventCursor - visibleH + 1
+	}
+}
+
+// eventsVisibleH returns the number of event data rows that fit in the pane
+// (excluding the title and header rows).
+func (m *model) eventsVisibleH() int {
+	contentH := m.height - 2 // top status + bottom key bars
+	if contentH < 1 {
+		contentH = 1
+	}
+	// Subtract pane title row (1) and column header row (1).
+	h := contentH - 2
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+// scrollSessionViewport updates sessionTop so that sessionCursor is within the
+// visible window.  Each session occupies 2 display lines (title + meta).
+func (m *model) scrollSessionViewport() {
+	visibleH := m.sessionsVisibleH()
+	if visibleH < 1 {
+		visibleH = 1
+	}
+	if m.sessionCursor < m.sessionTop {
+		m.sessionTop = m.sessionCursor
+	}
+	if m.sessionCursor >= m.sessionTop+visibleH {
+		m.sessionTop = m.sessionCursor - visibleH + 1
+	}
+}
+
+// sessionsVisibleH returns the number of session rows that fit in the sessions pane.
+// Each session is 2 physical lines; we divide available height by 2.
+func (m *model) sessionsVisibleH() int {
+	contentH := m.height - 2 // bars
+	if contentH < 1 {
+		contentH = 1
+	}
+	h := contentH - 1 // pane title row
+	// Each session row is 2 physical lines.
+	rows := h / 2
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
 }
 
 // --- commands ---------------------------------------------------------------

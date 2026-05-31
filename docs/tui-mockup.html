@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cchv — TUI redesign mockup</title>
+<style>
+  /* ---- Terminal palette (dark, 16-color-ANSI faithful) ----
+     These map to the lipgloss AdaptiveColor "Dark" indices used in theme.go:
+       success 10 bright-green · failure 9 bright-red · running 11 bright-yellow
+       info 12 bright-blue · muted 8 bright-black/grey · default fg = 7/15 */
+  :root{
+    --bg:        #11141a;   /* terminal background            */
+    --bg-pane:   #11141a;
+    --fg:        #c9d1d9;   /* default foreground (ANSI 7)    */
+    --fg-dim:    #768390;   /* muted / grey  (ANSI 8)         */
+    --fg-faint:  #4a525c;   /* dividers, inactive chrome      */
+    --sel-bg:    #1d2530;   /* SUBTLE selection band (NOT reverse-video) */
+    --sel-bg-foc:#23303f;   /* selection band when pane is focused       */
+    --accent:    #58a6ff;   /* info / focus accent  (ANSI 12) */
+    --green:     #56d364;   /* success  (ANSI 10)             */
+    --red:       #f85149;   /* failure  (ANSI 9)              */
+    --yellow:    #e3b341;   /* running  (ANSI 11)             */
+    --magenta:   #bc8cff;
+    --bar-bg:    #161b22;   /* status / key bars              */
+    --bar-fg:    #adbac7;
+  }
+  html,body{background:#05070a;margin:0;padding:0;color:var(--fg);}
+  body{
+    font-family:"SF Mono","JetBrains Mono","Cascadia Code","Menlo",
+                "DejaVu Sans Mono",monospace;
+    font-size:13px; line-height:1.5;
+    padding:28px 22px 60px;
+  }
+  h1{font-size:15px;font-weight:600;color:#e6edf3;margin:0 0 4px;}
+  .sub{color:#8b949e;font-size:12px;margin:0 0 22px;max-width:860px;}
+  .sub code{color:#d2a8ff;}
+  .label{color:#8b949e;font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin:26px 0 8px;}
+
+  /* The "screenshot" frame */
+  .term{
+    background:var(--bg);
+    border:1px solid #2d333b;
+    border-radius:8px;
+    overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.5);
+    max-width:1000px;
+  }
+  .titlebar{
+    background:#1c2128;height:28px;display:flex;align-items:center;gap:8px;
+    padding:0 12px;border-bottom:1px solid #2d333b;
+  }
+  .dot{width:11px;height:11px;border-radius:50%;}
+  .dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+  .titlebar .name{color:#768390;font-size:11px;margin-left:8px;}
+
+  .screen{padding:0;font-variant-ligatures:none;tab-size:1;}
+  .screen .row{display:block;height:1.5em;white-space:pre;}
+
+  /* ----- bars ----- */
+  .statusbar{background:var(--bar-bg);color:var(--bar-fg);padding:3px 10px;border-bottom:1px solid #21262d;}
+  .keybar  {background:var(--bar-bg);color:var(--fg-dim);padding:3px 10px;border-top:1px solid #21262d;}
+  .sep{color:var(--fg-faint);}
+  .key{color:var(--bar-fg);}
+  .key b{color:var(--accent);font-weight:600;}
+
+  /* ----- panes grid -----
+     TWO-COLUMN master-detail. Three tracks: pane | divider | pane.
+     Browse  = Sessions(36ch) │ Events(1fr)
+     Drill   = Events(1fr)     │ Inspector(46ch)
+     align-items:stretch makes the divider full-height. */
+  .panes{display:grid;align-items:stretch;background:var(--bg);}
+  .panes.browse{grid-template-columns:36ch 1px 1fr;}
+  .panes.drill {grid-template-columns:1fr 1px 46ch;}
+  .vdiv{background:#21262d;width:1px;align-self:stretch;}
+  .pane{padding:0;min-width:0;overflow:hidden;}
+  /* every text block inside a pane is monospace-preformatted */
+  .pane .body,.pane .insp,.pane .ehead{white-space:pre;}
+  .pane .ptitle{
+    color:#768390;font-weight:600;letter-spacing:.05em;
+    padding:5px 10px 5px;border-bottom:1px solid #1b2028;
+  }
+  .pane .ptitle.active{color:#e6edf3;}
+  .pane .ptitle .badge{color:var(--yellow);float:right;font-weight:400;}
+  .pane .body{padding:4px 0 8px;}
+
+  /* generic colored spans */
+  .g{color:var(--green)}.r-{color:var(--red)}.y{color:var(--yellow)}
+  .b{color:var(--accent)}.m{color:var(--magenta)}
+  .dim{color:var(--fg-dim)}.faint{color:var(--fg-faint)}
+  .bold{font-weight:600;color:#e6edf3}
+
+  /* ----- the key bit: stable rows ----- */
+  .erow{padding:1px 10px;display:block;border-left:2px solid transparent;}
+  /* every row reserves the same caret gutter + accent column => zero reflow */
+  .caret{display:inline-block;width:1ch;color:var(--fg-faint);}
+  /* selected row: subtle background band + left accent bar + solid caret.
+     NO reverse-video, NO width change. */
+  .erow.sel{
+    background:var(--sel-bg-foc);
+    border-left:2px solid var(--accent);
+    padding-left:8px; /* 10px - 2px border so text never shifts */
+  }
+  .erow.sel .caret{color:var(--accent);}
+  .erow.err.sel{border-left-color:var(--red);}
+
+  /* sessions rows: two lines (project + dim meta), same stable gutter approach.
+     The whole 2-line block is the selectable unit, so the band/accent wrap both. */
+  .srow{padding:2px 10px;display:block;border-left:2px solid transparent;}
+  .srow.sel{background:var(--sel-bg-foc);border-left:2px solid var(--accent);padding-left:8px;}
+  .srow .sproj{color:#adbac7;}            /* project name (cwd basename) */
+  .srow.sel .sproj{color:#e6edf3;font-weight:600;}
+  .srow .smeta{color:var(--fg-dim);}      /* short id · count · recency  */
+  .srow .scaret{display:inline-block;width:1ch;color:var(--fg-faint);}
+  .srow.sel .scaret{color:var(--accent);}
+  .live{color:var(--green);}
+
+  /* column header */
+  .ehead{color:#586069;padding:2px 10px;border-bottom:1px solid #1b2028;}
+
+  /* inspector */
+  .insp{padding:4px 10px;}
+  .kf{color:#768390;}
+  .kf b{color:#adbac7;font-weight:400;}
+  .ihr{color:#21262d;}
+  .jkey{color:var(--accent)}.jstr{color:var(--green)}.jnum{color:var(--magenta)}
+  .jbrace{color:var(--fg-dim)}
+  /* soft-wrapped inspector value: continuation lines get a hanging indent
+     aligned under the value start. The list NEVER does this — only the
+     inspector, which is the full-data escape hatch. */
+  .jwrap{color:var(--green);}
+  .jcont{color:var(--green);}        /* continuation line */
+
+  /* the truncation marker: a single dim … (muted token, ANSI 8) occupying the
+     last cell of a clipped value. Color-redundant — under NO_COLOR it's still a
+     literal … glyph that flags "there is more here". */
+  .ell{color:var(--fg-dim);}         /* dim ellipsis marker            */
+  .ellp{color:var(--fg-dim);}        /* interior/leading path elision  */
+  /* fixed-width TARGET cell with a visible column wall, to show what
+     happens to overrun content at the exact same boundary in both cards.
+     Two widths mirror the real views: Browse TARGET≈37, Drill TARGET≈22. */
+  .tw{display:inline-block;border-right:2px solid #e3934a;
+      overflow:hidden;white-space:nowrap;vertical-align:bottom;}
+  .tw.wb{width:37ch;}   /* Browse-width TARGET  */
+  .tw.wd{width:22ch;}   /* Drill-width TARGET   */
+
+  /* before/after comparison */
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1000px;margin-top:10px;}
+  .card{background:var(--bg);border:1px solid #2d333b;border-radius:6px;padding:10px 0 12px;}
+  .card h3{margin:0 0 2px;padding:0 12px;font-size:12px;}
+  .card .cap{padding:0 12px 8px;color:#768390;font-size:11px;}
+  .card.bad h3{color:#f85149}.card.good h3{color:#56d364}
+  .crow{padding:1px 12px;display:block;white-space:pre;}
+  /* the BAD reverse-video full-width bar */
+  .badbar{background:#c9d1d9;color:#11141a;}
+  .shifted{/* visualize the 2-char rightward jump */}
+  .arrow{color:#f0883e;}
+
+  .note{max-width:1000px;color:#8b949e;font-size:12px;line-height:1.7;margin-top:24px;}
+  .note b{color:#c9d1d9;}
+  .note .tok{color:#d2a8ff;}
+</style>
+</head>
+<body>
+
+<h1>cchv — interactive TUI redesign (two-column slide model)</h1>
+<p class="sub">
+  Two-column master-detail (≥80 cols). <b>Browse</b> shows <code>Sessions │ Events</code>; pressing
+  <code>Enter</code> on an <i>event</i> slides into <b>Drill</b> = <code>Events │ Inspector</code> (Sessions hides,
+  Inspector reveals). <code>Esc</code>/<code>h</code> pops one step shallower — never quits. <b>Events is the
+  fixed pivot</b>: it stays under your eye and slides left as the panes reflow, so nothing teleports.
+  Selection = <b>caret gutter + accent bar + subtle band</b> (never reverse-video); columns are fixed-width.
+  16-color ANSI tokens from <code>theme.go</code>; color always redundant with glyph + position.
+  Overflow is <b>softened</b>: type-aware truncation keeps the meaningful part (paths keep the filename),
+  a dim <code>…</code> flags a clipped value, and the Inspector soft-wraps instead of clipping.
+</p>
+
+<!-- ============================================================= -->
+<!-- STATE 1 — BROWSE:  Sessions │ Events                          -->
+<!-- ============================================================= -->
+<div class="label">State 1 — Browse · <span style="color:#adbac7">Sessions │ Events</span> · pick &amp; scan a session</div>
+<div class="term">
+  <div class="titlebar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="name">cchv tui — 110×30 · BROWSE</span>
+  </div>
+
+  <div class="screen">
+<div class="statusbar row"><span class="bold">cchv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
+
+  <div class="panes browse">
+
+    <!-- Sessions (visible in Browse) -->
+    <div class="pane">
+      <div class="ptitle">SESSIONS</div>
+      <div class="body">
+<span class="srow sel"><span class="scaret">▸</span><span class="live">●</span> <span class="sproj">Improve TUI design and UX issues</span>
+<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · live · 214</span></span>
+<span class="srow"><span class="scaret"> </span><span class="live">●</span> <span class="sproj">Fix daemon reconnect race</span>
+<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · live · 57</span></span>
+<span class="srow"><span class="scaret"> </span>  <span class="sproj">Add SSE backpressure handling</span>
+<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · 3m · 1.2k</span></span>
+<span class="srow"><span class="scaret"> </span><span class="live">●</span> <span class="sproj">Wire up plugin manifest</span>
+<span class="scaret"> </span>  <span class="smeta">api-gateway · live · 43</span></span>
+<span class="srow"><span class="scaret"> </span>  <span class="sproj">Dotfile symlink cleanup</span>
+<span class="scaret"> </span>  <span class="smeta">dotfiles · 2d · 8</span></span>
+      </div>
+    </div>
+    <div class="vdiv"></div>
+
+    <!-- Events (center pivot — FOCUSED in Browse) -->
+    <div class="pane">
+      <div class="ptitle active">EVENTS <span class="dim">Improve TUI design and UX issues</span><span class="badge">↓ 3 new</span></div>
+      <div class="ehead"><span class="caret"> </span>TIME     ST  HOOK             TOOL          TARGET                              DUR</div>
+      <div class="body">
+<span class="erow"><span class="caret"> </span>14:02:01 <span class="dim">·</span>  <span class="dim">SessionStart</span>                                                           </span>
+<span class="erow"><span class="caret"> </span>14:02:03 <span class="dim">·</span>  <span class="dim">UserPromptSubmit</span>               <span class="dim">add auth middleware to the gatewa</span><span class="ell">…</span>     </span>
+<span class="erow"><span class="caret"> </span>14:02:04 <span class="g">✔</span>  PreToolUse·Post  Read          <span class="b">internal/auth/middleware.go</span>          12ms</span>
+<span class="erow"><span class="caret"> </span>14:02:05 <span class="g">✔</span>  PreToolUse·Post  Grep          <span class="dim">"func.*Handler" internal/au</span><span class="ell">…</span>        31ms</span>
+<span class="erow sel"><span class="caret">▸</span>14:02:07 <span class="g">✔</span>  PreToolUse·Post  Edit          <span class="b">internal/auth/middleware.go</span>         140ms</span>
+<span class="erow"><span class="caret"> </span>14:02:08 <span class="y">▶</span>  PreToolUse       Bash          <span class="dim">go test ./internal/auth/.</span><span class="ell">…</span>     <span class="y">running</span></span>
+<span class="erow err"><span class="caret"> </span>14:02:11 <span class="r-">✘</span>  PreToolUse·Post  Bash          <span class="r-">go vet ./internal/auth/. (exit 2)</span><span class="ell">…</span> 1.8s</span>
+<span class="erow"><span class="caret"> </span>14:02:12 <span class="dim">·</span>  <span class="dim">Notification</span>                   <span class="dim">permission: allow Bash?</span>               </span>
+<span class="erow"><span class="caret"> </span>14:02:13 <span class="g">✔</span>  PreToolUse·Post  Write         <span class="b">internal/auth/middleware_test.go</span>      9ms</span>
+<span class="erow"><span class="caret"> </span>14:02:15 <span class="g">✔</span>  PreToolUse·Post  Bash          <span class="dim">go test ./internal/auth/.</span><span class="ell">…</span>       2.3s</span>
+<span class="erow"><span class="caret"> </span>14:02:18 <span class="dim">·</span>  <span class="dim">Stop</span>                                                                   </span>
+      </div>
+    </div>
+
+  </div>
+
+<div class="keybar row"><span class="key"><b>j/k</b>:move</span>  <span class="key"><b>enter</b>:open ▸</span>  <span class="key"><b>tab</b>:◂ sessions</span>  <span class="key"><b>f</b>:following</span>  <span class="key"><b>G</b>:live</span>  <span class="key"><b>/</b>:filter</span>  <span class="key"><b>e</b>:err-hop</span>  <span class="key"><b>o</b>:folded</span>  <span class="key"><b>?</b>:help</span>  <span class="key"><b>q</b>:quit</span></div>
+  </div>
+</div>
+
+<!-- transition note -->
+<div style="max-width:1000px;margin:14px 0 4px;color:#8b949e;font-size:12px;text-align:center;">
+  <span class="b">Enter</span> / <span class="b">l</span> on an event &nbsp;<span style="color:#f0883e;font-size:15px;">▼</span>&nbsp; slides Sessions out left, Events pivots to the left slot, Inspector reveals on the right &nbsp;·&nbsp; <span class="b">Esc</span> / <span class="b">h</span> pops back up
+</div>
+
+<!-- ============================================================= -->
+<!-- STATE 2 — DRILL:  Events │ Inspector                          -->
+<!-- ============================================================= -->
+<div class="label">State 2 — Drill · <span style="color:#adbac7">Events │ Inspector</span> · Sessions hidden, Inspector revealed</div>
+<div class="term">
+  <div class="titlebar">
+    <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+    <span class="name">cchv tui — 110×30 · DRILL</span>
+  </div>
+
+  <div class="screen">
+<div class="statusbar row"><span class="bold">cchv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
+
+  <div class="panes drill">
+
+    <!-- Events (same pivot — now LEFT, still showing the same selected row) -->
+    <div class="pane">
+      <div class="ptitle">EVENTS <span class="dim">Improve TUI design and UX issues</span></div>
+      <div class="ehead"><span class="caret"> </span>TIME     ST  HOOK             TOOL          TARGET                      DUR</div>
+      <div class="body">
+<span class="erow"><span class="caret"> </span>14:02:01 <span class="dim">·</span>  <span class="dim">SessionStart</span>                                                   </span>
+<span class="erow"><span class="caret"> </span>14:02:03 <span class="dim">·</span>  <span class="dim">UserPromptSubmit</span>               <span class="dim">add auth middleware t</span><span class="ell">…</span>   </span>
+<span class="erow"><span class="caret"> </span>14:02:04 <span class="g">✔</span>  PreToolUse·Post  Read          <span class="b">internal/</span><span class="ellp">…</span><span class="b">/middleware.go</span>   12ms</span>
+<span class="erow"><span class="caret"> </span>14:02:05 <span class="g">✔</span>  PreToolUse·Post  Grep          <span class="dim">"func.*Handler"</span>             31ms</span>
+<span class="erow sel"><span class="caret">▸</span>14:02:07 <span class="g">✔</span>  PreToolUse·Post  Edit          <span class="b">internal/</span><span class="ellp">…</span><span class="b">/middleware.go</span>  140ms</span>
+<span class="erow"><span class="caret"> </span>14:02:08 <span class="y">▶</span>  PreToolUse       Bash          <span class="dim">go test ./internal/au</span><span class="ell">…</span> <span class="y">running</span></span>
+<span class="erow err"><span class="caret"> </span>14:02:11 <span class="r-">✘</span>  PreToolUse·Post  Bash          <span class="r-">go vet ./… (exit 2)</span>          1.8s</span>
+<span class="erow"><span class="caret"> </span>14:02:12 <span class="dim">·</span>  <span class="dim">Notification</span>                   <span class="dim">permission: allow Bash?</span>       </span>
+<span class="erow"><span class="caret"> </span>14:02:13 <span class="g">✔</span>  PreToolUse·Post  Write         <span class="ellp">…</span><span class="b">/middleware_test.go</span>    9ms</span>
+<span class="erow"><span class="caret"> </span>14:02:15 <span class="g">✔</span>  PreToolUse·Post  Bash          <span class="dim">go test ./internal/au</span><span class="ell">…</span>   2.3s</span>
+<span class="erow"><span class="caret"> </span>14:02:18 <span class="dim">·</span>  <span class="dim">Stop</span>                                                           </span>
+      </div>
+    </div>
+    <div class="vdiv"></div>
+
+    <!-- Inspector (revealed, FOCUSED — roomier 46ch) -->
+    <div class="pane">
+      <div class="ptitle active">INSPECTOR</div>
+      <div class="insp">
+<span class="kf">Hook    <b>PostToolUse</b></span>
+<span class="kf">Tool    <b>Edit</b>   <span class="g">✔ exit 0</span></span>
+<span class="kf">Dur     <b>140ms</b>  <span class="dim">(paired · Pre→Post)</span></span>
+<span class="kf">Time    <b>2026-05-29 14:02:07</b></span>
+<span class="kf">Seq     <b>118</b>   <span class="dim">·  id 9f3a1c2…e4</span></span>
+<span class="ihr">────────────────────────────────────────────</span>
+<span class="dim">tool_input</span>  <span class="dim">— values soft-wrap, never clip</span>
+<span class="jbrace">{</span>
+  <span class="jkey">"file_path"</span>: <span class="jstr">"internal/auth/middleware.go"</span>,
+  <span class="jkey">"old_string"</span>: <span class="jstr">"func New() *Middleware {"</span>,
+  <span class="jkey">"new_string"</span>: <span class="jwrap">"func New(cfg Config, log</span>
+              <span class="jcont">*slog.Logger) *Middleware {"</span>,
+  <span class="jkey">"replace_all"</span>: <span class="jnum">false</span>
+<span class="jbrace">}</span>
+<span class="ihr">────────────────────────────────────────────</span>
+<span class="dim">tool_response</span>
+<span class="jbrace">{</span>
+  <span class="jkey">"exit_code"</span>: <span class="jnum">0</span>,
+  <span class="jkey">"file_modified"</span>: <span class="jnum">true</span>,
+  <span class="jkey">"lines_changed"</span>: <span class="jnum">1</span>
+<span class="jbrace">}</span>
+      </div>
+    </div>
+
+  </div>
+
+<div class="keybar row"><span class="key"><b>j/k</b>:scroll</span>  <span class="key"><b>y</b>:yank</span>  <span class="key"><b>Y</b>:yank-raw</span>  <span class="key"><b>r</b>:raw</span>  <span class="key"><b>tab</b>:◂ events</span>  <span class="key"><b>esc</b>:◂ back to browse</span>  <span class="key"><b>?</b>:help</span>  <span class="key"><b>q</b>:quit</span></div>
+  </div>
+</div>
+
+<!-- ===================== BEFORE / AFTER ===================== -->
+<div class="label">The two defects, visualized — before vs after</div>
+<div class="cmp">
+
+  <div class="card bad">
+    <h3>✘ Before</h3>
+    <div class="cap">Selected row = full-width <b>reverse-video</b> bar (reads as a random white block).
+      The <span class="tok">"&gt; "</span> prefix is injected only on the selected row, so its columns shift
+      <b>2 chars right</b> and stop aligning — the whole row jumps as the cursor moves.</div>
+<span class="crow"><span class="dim">14:02:05 ✔  PreToolUse·Post  Grep        "func.*Handler"</span></span>
+<span class="crow badbar">&gt; 14:02:07 ✔  PreToolUse·Post  Edit      internal/auth/mw.go</span>
+<span class="crow"><span class="dim">14:02:08 ▶  PreToolUse       Bash        go test ./…</span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow">▲</span> <span class="dim">white bar + columns kicked right by the </span><span class="tok">"&gt; "</span><span class="dim"> prefix</span></span>
+  </div>
+
+  <div class="card good">
+    <h3>✔ After</h3>
+    <div class="cap">Caret gutter is reserved on <b>every</b> row, so widths never change. Selection =
+      solid caret <b>▸</b> + left accent bar + a <b>subtle</b> background band (a theme color, not reverse-video).
+      Columns line up straight down the pane.</div>
+<span class="crow"><span class="faint"> </span> <span class="dim">14:02:05 ✔  PreToolUse·Post  Grep      "func.*Handler"</span></span>
+<span class="crow sel" style="display:block;border-left:2px solid var(--accent);background:var(--sel-bg-foc);padding-left:10px;"><span class="b">▸</span> 14:02:07 <span class="g">✔</span>  PreToolUse·Post  Edit      <span class="b">internal/auth/mw.go</span></span>
+<span class="crow"><span class="faint"> </span> <span class="dim">14:02:08 ▶  PreToolUse       Bash      go test ./…</span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow">▲</span> <span class="dim">caret + accent + soft band; nothing reflows</span></span>
+  </div>
+</div>
+
+<!-- ===================== TRUNCATION IN CONTEXT ===================== -->
+<div class="label">Softening in the BROWSE view · TARGET ≈ 37 cols · the orange ▕ is the column edge · most paths fit whole; only long ones elide</div>
+<div class="cmp">
+  <div class="card bad">
+    <h3>✘ Before — hard clip</h3>
+    <div class="cap">Even with Browse's roomy column, a deep path or long command is chopped mid-character at the wall — and the <b>filename</b> is the first casualty.</div>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wb">internal/event/event.go</span></span>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wb">internal/daemon/handlers/sessions_handler.go</span></span>
+<span class="crow"><span class="g">✔</span> Write  <span class="tw wb">internal/store/jsonl_writer_concurrent_test.go</span></span>
+<span class="crow"><span class="y">▶</span> Bash   <span class="tw wb">go test ./internal/daemon/... -run TestStreamFanout</span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow">▲</span> <span class="dim">…sessions_hand / …concurrent_  — meaning lost, no signal</span></span>
+  </div>
+  <div class="card good">
+    <h3>✔ After — soft, type-aware</h3>
+    <div class="cap">Short paths fit whole (no marker). Long ones middle-elide so the <b>basename survives</b>; the command keeps its head. A dim <span class="ell">…</span> flags each cut.</div>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wb">internal/event/event.go</span></span>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wb">internal/daemon/<span class="ellp">…</span>/sessions_handler.go</span></span>
+<span class="crow"><span class="g">✔</span> Write  <span class="tw wb"><span class="ellp">…</span>/jsonl_writer_concurrent_test.go</span></span>
+<span class="crow"><span class="y">▶</span> Bash   <span class="tw wb">go test ./internal/daemon/... -run Tes<span class="ell">…</span></span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow" style="color:#3fb950">▲</span> <span class="dim">event.go untouched · basenames kept · </span><span class="ell">…</span><span class="dim"> = more</span></span>
+  </div>
+</div>
+
+<div class="label">Softening in the DRILL view · TARGET ≈ 22 cols · Inspector takes the width, so TARGET elides harder — basename is still never sacrificed</div>
+<div class="cmp">
+  <div class="card bad">
+    <h3>✘ Before — hard clip</h3>
+    <div class="cap">In Drill the column is narrow, so almost everything clips — and hard-clip throws away the end of every path.</div>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wd">internal/auth/middleware.go</span></span>
+<span class="crow"><span class="g">✔</span> Grep   <span class="tw wd">"func.*Handler regex pattern"</span></span>
+<span class="crow"><span class="g">✔</span> Write  <span class="tw wd">internal/auth/middleware_test.go</span></span>
+<span class="crow"><span class="y">▶</span> Bash   <span class="tw wd">go test ./internal/auth/handlers</span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow">▲</span> <span class="dim">every filename truncated to nothing useful</span></span>
+  </div>
+  <div class="card good">
+    <h3>✔ After — soft, type-aware</h3>
+    <div class="cap">Tighter elision (drops to <span class="ellp">…</span>/basename) but the <b>filename still survives</b>; quoted string keeps its close-quote. Full value is one <span class="tok">Enter</span> away in the Inspector.</div>
+<span class="crow"><span class="g">✔</span> Read   <span class="tw wd"><span class="ellp">…</span>/middleware.go</span></span>
+<span class="crow"><span class="g">✔</span> Grep   <span class="tw wd">"func.*Handler<span class="ell">…</span>"</span></span>
+<span class="crow"><span class="g">✔</span> Write  <span class="tw wd"><span class="ellp">…</span>/middleware_test.go</span></span>
+<span class="crow"><span class="y">▶</span> Bash   <span class="tw wd">go test ./internal/au<span class="ell">…</span></span></span>
+<span class="crow"><span class="faint"> </span></span>
+<span class="crow"><span class="arrow" style="color:#3fb950">▲</span> <span class="dim">basename + close-quote kept; backed by the Inspector</span></span>
+  </div>
+</div>
+
+<!-- NO_COLOR variant -->
+<div class="label">NO_COLOR / dumb-term fallback (glyph + text tag carry all signal; the … marker stays a literal glyph, or ~ if … is unsupported)</div>
+<div class="card" style="max-width:1000px;background:#0b0d10;">
+<span class="crow" style="color:#c9d1d9;"><span class="faint"> </span> 14:02:05 [✔]  PreToolUse·Post  Grep      "func.*Handler" inter…    31ms</span>
+<span class="crow" style="color:#c9d1d9;background:#1a1f27;border-left:2px solid #c9d1d9;padding-left:10px;"><span style="color:#fff;">»</span> 14:02:07 [✔]  PreToolUse·Post  Edit      internal/…/middleware.go 140ms</span>
+<span class="crow" style="color:#c9d1d9;"><span class="faint"> </span> 14:02:08 [▶]  PreToolUse       Bash      go test ./internal/au…  running</span>
+<span class="crow" style="color:#c9d1d9;"><span class="faint"> </span> 14:02:11 [✘]  PreToolUse·Post  Bash      go vet ./… (exit 2)       1.8s</span>
+</div>
+
+<div class="note">
+  <b>Navigation ladder (the slide model):</b> <code>Sessions │ Events</code> (Browse) ⟷ <code>Events │ Inspector</code> (Drill).
+  <span class="tok">Enter</span>/<span class="tok">l</span> on an <i>event</i> enters Drill (Enter on a <i>session</i> just focuses Events — Sessions stays, so you can hop
+  between concurrent same-cwd sessions). <span class="tok">Esc</span>/<span class="tok">h</span> always pops exactly one step shallower:
+  Inspector → Events (back to Browse) → Sessions → stop. Esc <i>never</i> quits — only <span class="tok">q</span> quits.
+  <span class="tok">Tab</span> cycles the visible panes; <span class="tok">1/2/3</span> jump to Sessions/Events/Inspector and cross the depth
+  boundary when needed (<code>3</code> from Browse enters Drill; <code>1</code> from Drill pops out). <b>Events is the pivot</b> —
+  it never teleports; Sessions slides out left while Events takes its slot (instant swap under reduced-motion).<br>
+  <b>Selection vs focus:</b> the selected row always shows the caret + accent bar. When the
+  <i>pane itself</i> is focused, the band brightens (<span class="tok">--sel-bg-foc</span>) and the caret/accent use the
+  info accent; when the pane is unfocused the same row keeps a dimmer band (<span class="tok">--sel-bg</span>) with a grey
+  caret — so you can always see "where you'll land when you tab here" without a second jarring highlight.<br>
+  <b>Error rows</b> use the red accent bar + <b>✘</b> glyph + red <code>(exit 2)</code> text — three redundant signals.<br>
+  <b>Folded Pre/Post ops</b> render as one row labeled <code>PreToolUse·Post</code> with the resolved glyph and the
+  Post−Pre duration; an unpaired Pre stays <b>▶ running</b> until its Post lands.<br>
+  <b>Stable columns:</b> TIME(8) · ST(1+pad) · HOOK(16) · TOOL(12) · TARGET(flex) · DUR(right-aligned 7),
+  with a 1-char caret gutter to the left of TIME on <i>every</i> row including the header. Two columns give
+  TARGET much more room — full paths in Browse, gracefully ellipsized in Drill where the Inspector takes width.<br>
+  <b>Soft truncation (type-aware):</b> the list clips but keeps the <i>signal</i>, flagged by a dim <span class="tok">…</span> in the last cell.
+  <b>Paths</b> → basename-priority middle-elision <code>internal/<span class="ellp">…</span>/middleware.go</code> then <code><span class="ellp">…</span>/middleware_test.go</code>
+  (the filename is sacred). <b>Commands</b> → head-keep <code>go test ./internal/au<span class="ell">…</span></code>. <b>Quoted strings</b> → head-keep,
+  marker after <code>"func.*Handler" inter<span class="ell">…</span></code>. The marker eats one cell (content clipped to width−1) so "clipped" is a
+  deliberate flag, and its <i>position</i> tells you which end was dropped (leading/interior <span class="tok">…</span> = path, trailing <span class="tok">…</span> = head-keep).
+  Under NO_COLOR the <span class="tok">…</span> stays a literal glyph (or <code>~</code> if unsupported) — color-blind / dumb-term safe.<br>
+  <b>Wrap vs clip:</b> the <b>list never wraps</b> (fixed-width, no reflow — including the selected row, whose full TARGET is shown
+  in the Inspector key-facts instead of a jumpy inline reveal). The <b>Inspector soft-wraps</b> long values with a hanging indent
+  aligned under the value start — it's the full-data escape hatch and loses nothing. A dim <span class="tok">…</span> is an affordance:
+  <span class="tok">Enter</span> to inspect the full value, <span class="tok">y</span>/<span class="tok">Y</span> to yank it literally.<br>
+  <b>Width budget:</b> DUR is reserved at its real content width (≤7) and donates its space to TARGET on rows with no duration
+  (SessionStart, Stop, Notification). In Browse, TARGET ≈ 37 cols so most real paths fit whole; in Drill it shrinks to ≈ 22,
+  but every clipped value there is backed by the adjacent Inspector.
+</div>
+
+</body>
+</html>

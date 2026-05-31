@@ -615,6 +615,61 @@ func TestPortFileRemovedOnShutdown(t *testing.T) {
 	}
 }
 
+// --- GET /sessions — Phase 8d fields ---
+
+// TestGetSessionsIncludesCWDAndTitle verifies that GET /sessions returns the
+// cwd and title fields populated from the event payload. The event is posted
+// with a Raw field containing cwd so the store scanner can capture it; the
+// title falls back to "project · shortid" because there is no transcript.
+func TestGetSessionsIncludesCWDAndTitle(t *testing.T) {
+	_, ts := newTestServer(t)
+
+	// Build an event whose Raw payload contains a cwd field; no transcript_path
+	// so the title falls through to the "project · shortid" rung.
+	rawPayload, err := json.Marshal(map[string]any{
+		"hook_event_name": "Stop",
+		"session_id":      "abcdefghijk",
+		"cwd":             "/home/user/labelproject",
+	})
+	if err != nil {
+		t.Fatalf("marshal raw: %v", err)
+	}
+
+	ev := &event.Event{
+		ID:        "label-1",
+		SessionID: "abcdefghijk",
+		HookEvent: "Stop",
+		CWD:       "/home/user/labelproject",
+		Raw:       json.RawMessage(rawPayload),
+	}
+	postEvent(t, ts.URL, ev).Body.Close()
+	waitForSeq(t, ts.URL, "abcdefghijk", 1, 2*time.Second)
+
+	resp, err := http.Get(ts.URL + "/sessions")
+	if err != nil {
+		t.Fatalf("GET /sessions: %v", err)
+	}
+	defer resp.Body.Close()
+
+	var infos []store.SessionInfo
+	if err := json.NewDecoder(resp.Body).Decode(&infos); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(infos) == 0 {
+		t.Fatal("expected at least 1 session")
+	}
+
+	info := infos[0]
+	if info.CWD != "/home/user/labelproject" {
+		t.Errorf("CWD = %q, want %q", info.CWD, "/home/user/labelproject")
+	}
+	// Title must be "labelproject · abcdefg" (project·shortid fallback).
+	want := "labelproject · abcdefg"
+	if info.Title != want {
+		t.Errorf("Title = %q, want %q", info.Title, want)
+	}
+}
+
 // --- Run entrypoint smoke test ---
 
 func TestRunForegroundFlagParsed(t *testing.T) {

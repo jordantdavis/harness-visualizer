@@ -18,6 +18,13 @@ import (
 	"jordandavis.dev/cc-harness-visualizer/internal/paths"
 )
 
+// transcriptCacheKey uniquely identifies a cached transcript parse by file
+// path and modification time.
+type transcriptCacheKey struct {
+	path  string
+	mtime time.Time
+}
+
 const (
 	scanBufInit = 64 * 1024
 	scanBufMax  = 16 * 1024 * 1024
@@ -30,6 +37,11 @@ type Store struct {
 	mu    sync.Mutex
 	seq   map[string]int64    // sessionID -> last assigned seq
 	files map[string]*os.File // sessionID -> open append handle
+
+	// transcriptMu guards transcriptCache; separate from mu so transcript
+	// lookups during Sessions() do not contend with Append.
+	transcriptMu    sync.Mutex
+	transcriptCache map[transcriptCacheKey]transcriptResult // mtime-keyed cache
 }
 
 // New creates a Store rooted at dir, creating dir if absent.
@@ -38,9 +50,10 @@ func New(dir string) (*Store, error) {
 		return nil, err
 	}
 	return &Store{
-		dir:   dir,
-		seq:   make(map[string]int64),
-		files: make(map[string]*os.File),
+		dir:             dir,
+		seq:             make(map[string]int64),
+		files:           make(map[string]*os.File),
+		transcriptCache: make(map[transcriptCacheKey]transcriptResult),
 	}, nil
 }
 
@@ -76,8 +89,8 @@ func (s *Store) fileFor(sessionID string) (*os.File, error) {
 	path := filepath.Join(s.dir, paths.SessionFilename(sessionID))
 
 	if _, primed := s.seq[sessionID]; !primed {
-		if _, _, last, err := scanCountAndLastSeq(path); err == nil {
-			s.seq[sessionID] = last
+		if sr, err := scanSession(path); err == nil {
+			s.seq[sessionID] = sr.last
 		}
 	}
 
@@ -132,12 +145,22 @@ type SessionInfo struct {
 	EventCount int64     `json:"event_count"`
 	LastSeq    int64     `json:"last_seq"`
 	ModTime    time.Time `json:"mod_time"`
+
+	// CWD is the working directory captured from the session's events
+	// (Phase 8d). project = filepath.Base(CWD). Empty when unknown.
+	CWD string `json:"cwd,omitempty"`
+	// Title is the human-facing session label (Phase 8d). It is resolved via a
+	// fallback chain (transcript ai-title → last prompt → first UserPromptSubmit
+	// prompt → "project · shortid") and is never blank when the session has any
+	// events. Empty only for an empty session file.
+	Title string `json:"title,omitempty"`
 }
 
 // Sessions lists every recorded session by scanning the store directory.
 // Counts and last seq are derived by reading each file; at personal-tool
 // scale this is fast enough. A dedicated index is a documented deferral if
-// listing ever slows.
+// listing ever slows. CWD and Title are populated via a single-pass scan plus
+// a cached transcript read.
 func (s *Store) Sessions() ([]SessionInfo, error) {
 	entries, err := os.ReadDir(s.dir)
 	if err != nil {
@@ -148,47 +171,177 @@ func (s *Store) Sessions() ([]SessionInfo, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
-		id, count, last, err := scanCountAndLastSeq(filepath.Join(s.dir, e.Name()))
+		sr, err := scanSession(filepath.Join(s.dir, e.Name()))
 		if err != nil {
 			continue
 		}
+		id := sr.id
 		if id == "" {
 			id = strings.TrimSuffix(e.Name(), ".jsonl")
 		}
-		info := SessionInfo{ID: id, EventCount: count, LastSeq: last}
+		info := SessionInfo{
+			ID:         id,
+			EventCount: sr.count,
+			LastSeq:    sr.last,
+			CWD:        sr.cwd,
+		}
 		if fi, err := e.Info(); err == nil {
 			info.ModTime = fi.ModTime()
 		}
+		info.Title = s.resolveTitle(id, sr)
 		infos = append(infos, info)
 	}
 	return infos, nil
 }
 
-// scanCountAndLastSeq returns the session id from the first valid event, the
-// valid-event count, and the max Seq in path. id is empty when the file has
-// no valid events.
-func scanCountAndLastSeq(path string) (id string, count int64, last int64, err error) {
+// resolveTitle applies the fallback chain to produce a non-blank title for a
+// session with at least one valid event. Returns "" only when sr has no valid
+// events (count == 0).
+//
+// Chain (first non-empty wins):
+//  1. transcript aiTitle (last ai-title record)
+//  2. transcript lastPrompt (last last-prompt record)
+//  3. first UserPromptSubmit prompt captured during the session scan
+//  4. "project · shortid" where project = filepath.Base(cwd) or "unknown"
+func (s *Store) resolveTitle(id string, sr scanResult) string {
+	if sr.count == 0 {
+		return ""
+	}
+
+	// Attempt transcript-derived fields if a path was captured.
+	if sr.transcriptPath != "" {
+		tr := s.cachedTranscript(sr.transcriptPath)
+		if tr.aiTitle != "" {
+			return tr.aiTitle
+		}
+		if tr.lastPrompt != "" {
+			return tr.lastPrompt
+		}
+	}
+
+	// First UserPromptSubmit prompt from session events.
+	if sr.firstUserPrompt != "" {
+		return sr.firstUserPrompt
+	}
+
+	// Final rung: "project · shortid".
+	project := "unknown"
+	if sr.cwd != "" {
+		project = filepath.Base(sr.cwd)
+	}
+	shortID := id
+	if len(shortID) > 7 {
+		shortID = shortID[:7]
+	}
+	return project + " · " + shortID
+}
+
+// cachedTranscript returns a transcriptResult for path, using the mtime cache
+// to avoid re-reading unchanged files. Thread-safe.
+func (s *Store) cachedTranscript(path string) transcriptResult {
+	fi, err := os.Stat(path)
+	if err != nil {
+		// File missing or unreadable — return empty without caching.
+		return transcriptResult{}
+	}
+	key := transcriptCacheKey{path: path, mtime: fi.ModTime()}
+
+	s.transcriptMu.Lock()
+	defer s.transcriptMu.Unlock()
+
+	if cached, ok := s.transcriptCache[key]; ok {
+		return cached
+	}
+	result := readTranscript(path)
+	s.transcriptCache[key] = result
+	return result
+}
+
+// scanResult holds all fields extracted from a single pass over a session file.
+type scanResult struct {
+	id              string // session ID from the first valid event
+	count           int64  // number of valid events
+	last            int64  // max Seq observed
+	cwd             string // first non-empty cwd (event.CWD preferred, Raw.cwd fallback)
+	transcriptPath  string // last non-empty transcript_path from Raw
+	firstUserPrompt string // prompt from the first UserPromptSubmit event
+}
+
+// scanSession performs a single pass over a session JSONL file, extracting the
+// fields needed by Sessions() and fileFor(). Any malformed line is skipped; a
+// missing file is not an error for fileFor's prime path (it returns err only
+// when os.Open fails for a reason other than NotExist would need special
+// handling — callers should be prepared for a zero scanResult).
+func scanSession(path string) (scanResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", 0, 0, err
+		return scanResult{}, err
 	}
 	defer f.Close()
+
+	var sr scanResult
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, scanBufInit), scanBufMax)
 	for sc.Scan() {
-		var ev event.Event
-		if err := json.Unmarshal(sc.Bytes(), &ev); err != nil {
+		line := sc.Bytes()
+		if len(line) == 0 {
 			continue
 		}
-		if id == "" {
-			id = ev.SessionID
+		var ev event.Event
+		if err := json.Unmarshal(line, &ev); err != nil {
+			continue
 		}
-		count++
-		if ev.Seq > last {
-			last = ev.Seq
+		if sr.id == "" {
+			sr.id = ev.SessionID
+		}
+		sr.count++
+		if ev.Seq > sr.last {
+			sr.last = ev.Seq
+		}
+
+		// CWD: prefer promoted field, fall back to Raw.
+		if sr.cwd == "" {
+			if ev.CWD != "" {
+				sr.cwd = ev.CWD
+			} else if cwd := rawStringField(ev.Raw, "cwd"); cwd != "" {
+				sr.cwd = cwd
+			}
+		}
+
+		// transcript_path: last non-empty wins (defensive: it's stable across events).
+		if tp := rawStringField(ev.Raw, "transcript_path"); tp != "" {
+			sr.transcriptPath = tp
+		}
+
+		// First UserPromptSubmit prompt.
+		if sr.firstUserPrompt == "" && ev.HookEvent == "UserPromptSubmit" {
+			if p := rawStringField(ev.Raw, "prompt"); p != "" {
+				sr.firstUserPrompt = p
+			}
 		}
 	}
-	return id, count, last, sc.Err()
+	return sr, sc.Err()
+}
+
+// rawStringField extracts a top-level string field from a JSON object without
+// fully unmarshaling it. Returns "" for any error or absent/non-string field.
+func rawStringField(raw json.RawMessage, field string) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	v, ok := m[field]
+	if !ok {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(v, &s); err != nil {
+		return ""
+	}
+	return s
 }
 
 // Close flushes and closes all open session handles.
