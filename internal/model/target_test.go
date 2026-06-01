@@ -35,6 +35,11 @@ func TestExtractTarget(t *testing.T) {
 		},
 		{"empty raw", &event.Event{HookEvent: "PreToolUse", ToolName: "Bash"}, ""},
 		{"malformed raw", &event.Event{HookEvent: "PreToolUse", ToolName: "Bash", Raw: []byte(`nope`)}, ""},
+		{"subagent type", &event.Event{HookEvent: "SubagentStart", Raw: []byte(`{"subagent_type":"engineer"}`)}, "engineer"},
+		{"subagent description fallback", &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{"description":"do a thing"}`)}, "do a thing"},
+		{"compact trigger", &event.Event{HookEvent: "PreCompact", Raw: []byte(`{"trigger":"auto"}`)}, "auto"},
+		{"compact reason fallback", &event.Event{HookEvent: "PostCompact", Raw: []byte(`{"reason":"manual"}`)}, "manual"},
+		{"post tool use failure carries tool target", &event.Event{HookEvent: "PostToolUseFailure", ToolName: "Bash", Raw: []byte(`{"tool_input":{"command":"false"}}`)}, "false"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
