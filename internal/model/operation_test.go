@@ -221,6 +221,23 @@ func TestBuildOperations_SubagentStopWithError(t *testing.T) {
 	}
 }
 
+func TestBuildOperations_NoHeuristicWhenToolNameEmpty(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	// Two tool events with no tool_use_id AND no ToolName: heuristic must not
+	// pair them. Without the guard, both events would share the empty bucket
+	// key and the heuristic would falsely pair the Pre with the Post.
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreToolUse", "", `{}`, t0),
+		ev(2, "PostToolUse", "", `{"tool_response":{"exit_code":0}}`, t0.Add(time.Second)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1", len(ops))
+	}
+	if ops[0].Status != StatusRunning {
+		t.Fatalf("empty-ToolName Pre should stay running (no heuristic), got %q", ops[0].Status)
+	}
+}
+
 func TestBuildOperations_MixedKindsChronological(t *testing.T) {
 	t0 := time.Unix(1000, 0)
 	ops := BuildOperations([]*event.Event{

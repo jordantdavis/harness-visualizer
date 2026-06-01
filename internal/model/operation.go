@@ -111,8 +111,9 @@ func buildPairs(events []*event.Event, sp pairSpec) []Operation {
 				postByID[id] = idx
 			}
 		}
-		key := sp.toolKey(e)
-		postByKey[key] = append(postByKey[key], idx)
+		if k := sp.toolKey(e); k != "" {
+			postByKey[k] = append(postByKey[k], idx)
+		}
 	}
 
 	var ops []Operation
@@ -143,13 +144,16 @@ func buildPairs(events []*event.Event, sp pairSpec) []Operation {
 		// 2. Heuristic: first unclaimed Post of same kind (same toolKey) with
 		//    a later Seq. Heuristics are scoped to this spec's postByKey, so
 		//    cross-kind matches are structurally impossible.
+		//    Guard: skip if toolKey is "" — an empty key means ToolName is absent
+		//    and we must not heuristically bucket all such events together.
 		if post == nil {
-			key := sp.toolKey(e)
-			for _, idx := range postByKey[key] {
-				if !posts[idx].claimed && posts[idx].ev.Seq > e.Seq {
-					posts[idx].claimed = true
-					post = posts[idx].ev
-					break
+			if key := sp.toolKey(e); key != "" {
+				for _, idx := range postByKey[key] {
+					if !posts[idx].claimed && posts[idx].ev.Seq > e.Seq {
+						posts[idx].claimed = true
+						post = posts[idx].ev
+						break
+					}
 				}
 			}
 		}
