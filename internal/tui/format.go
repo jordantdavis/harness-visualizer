@@ -431,7 +431,7 @@ func fixedWidth() int {
 }
 
 // isLifecycleHook reports whether the hook event is a lifecycle-only event
-// (SessionStart, UserPromptSubmit, Notification, Stop, SessionEnd).
+// (SessionStart, UserPromptSubmit, Notification, Stop, SessionEnd, MessageDisplay).
 // These rows are rendered dim across the HOOK+TARGET columns.
 //
 // SubagentStop and PreCompact are intentionally excluded: they are part of
