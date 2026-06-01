@@ -71,12 +71,17 @@ to the data dir. Path resolution is centralized in `internal/paths`. Default por
 - **`internal/event`** — the canonical `Event` envelope: a few fields `hv` owns (`ID`,
   `CapturedAt`, `Seq`, `HookEvent`, `SessionID`, `ToolName`…) **plus `Raw`, the entire
   original hook payload kept verbatim**. Parsing is deliberately lenient (absent fields →
-  zero values, not errors) so new upstream Claude Code fields never break capture.
+  zero values, not errors) so new upstream Claude Code fields never break capture. Hook
+  metadata for standalone lane events (glyph, label, lane, severity) lives in
+  `internal/event/hooks.go` so the TUI and web client share rendering decisions.
 - **`internal/model`** — harness-agnostic domain types and the timeline logic.
   `BuildOperations` pairs `PreToolUse`/`PostToolUse` into `Operation`s (keyed by `tool_use_id`,
-  so live upserts replace a running row in place). `MergeTimeline` interleaves operations with
-  conversation `Turn`s into one chronological `TimelineItem` list. **Operations are
-  authoritative; turns enrich.** Sort key is `At`, ties broken by `Seq`.
+  so live upserts replace a running row in place). `BuildLaneEvents` reduces standalone
+  (non-pairable) hooks like `PermissionRequest`, `InstructionsLoaded`, `CwdChanged`, etc. into
+  `LaneEvent`s, with per-hook gist extractors that read `Raw` defensively. `MergeTimeline`
+  interleaves operations, conversation `Turn`s, and lane events into one chronological
+  `TimelineItem` list. **Operations are authoritative; turns and lane events enrich.** Sort
+  key is `At`, ties broken by `Seq`.
 - **`internal/source/claudecode`** — the **only** package that knows Claude Code's on-disk
   transcript schema. It adapts transcripts into the harness-agnostic `model.Turn`. Everything
   upstream consumes `model.Turn`. Parsing is defensive: a missing/unreadable/foreign file
@@ -90,7 +95,7 @@ to the data dir. Path resolution is centralized in `internal/paths`. Default por
 
 Legacy/raw: `/healthz`, `/events` (POST), `/sessions`, `/sessions/{id}`, `/stream` (SSE).
 JSON API for the web UI: `/api/sessions`, `/api/sessions/{id}/timeline?after=`,
-`/api/sessions/{id}/operations/{opID}`. `/` serves the embedded SPA.
+`/api/sessions/{id}/operations/{opID}`, `/api/hooks`. `/` serves the embedded SPA.
 
 ### Frontend (`web/`)
 
