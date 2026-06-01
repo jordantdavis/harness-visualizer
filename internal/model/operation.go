@@ -14,13 +14,14 @@ import (
 // replace a running row in place. Heavy detail (diff/input/response/raw) is
 // fetched separately via BuildOperationDetail.
 type Operation struct {
-	ID        string        `json:"id"`         // tool_use_id, or "" when absent
-	Tool      string        `json:"tool"`       // Edit, Bash, Read…
-	Status    Status        `json:"status"`     // running | success | error | neutral
-	StartedAt time.Time     `json:"started_at"` // Pre.CapturedAt
-	Duration  time.Duration `json:"duration"`   // nanoseconds (marshals as int64); 0 while running
-	Target    string        `json:"target"`     // file path / command gist
-	Seq       int64         `json:"seq"`        // Pre.Seq — the chronological anchor
+	Kind      string        `json:"kind"`           // "tool" | "subagent" | "compact"
+	ID        string        `json:"id"`             // tool_use_id, or "" when absent
+	Tool      string        `json:"tool,omitempty"` // Edit, Bash, Read…; empty for non-tool kinds
+	Status    Status        `json:"status"`         // running | success | error | neutral
+	StartedAt time.Time     `json:"started_at"`     // Pre.CapturedAt
+	Duration  time.Duration `json:"duration"`       // nanoseconds (marshals as int64); 0 while running
+	Target    string        `json:"target"`         // file path / command gist
+	Seq       int64         `json:"seq"`            // Pre.Seq — the chronological anchor
 }
 
 // BuildOperations pairs PreToolUse with PostToolUse events and returns the
@@ -56,6 +57,7 @@ func BuildOperations(events []*event.Event) []Operation {
 			continue
 		}
 		op := Operation{
+			Kind:      "tool",
 			ID:        toolUseID(e.Raw),
 			Tool:      e.ToolName,
 			Status:    StatusRunning,

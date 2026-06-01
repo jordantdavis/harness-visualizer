@@ -72,3 +72,17 @@ func TestBuildOperations_DropsNonToolEvents(t *testing.T) {
 		t.Fatalf("non-tool events should not become operations, got %+v", ops)
 	}
 }
+
+func TestBuildOperations_DefaultKindIsTool(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreToolUse", "Edit", `{"tool_use_id":"a"}`, t0),
+		ev(2, "PostToolUse", "Edit", `{"tool_use_id":"a","tool_response":{"exit_code":0}}`, t0.Add(100*time.Millisecond)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1", len(ops))
+	}
+	if ops[0].Kind != "tool" {
+		t.Fatalf("Kind = %q, want \"tool\"", ops[0].Kind)
+	}
+}
