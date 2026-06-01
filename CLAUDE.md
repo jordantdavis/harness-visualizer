@@ -32,7 +32,7 @@ A fresh checkout can `go build ./cmd/hv` before the frontend is built — `inter
 ships a tracked `.gitkeep` so `go:embed` always has something, and the binary serves a "run
 `make build`" notice instead of the app until the real bundle is embedded.
 
-## Architecture: one binary, four roles
+## Architecture: one binary, three roles
 
 `cmd/hv/main.go` is pure subcommand dispatch. Each role is a package exposing `Run(args []string) int`:
 
@@ -46,9 +46,6 @@ ships a tracked `.gitkeep` so `go:embed` always has something, and the binary se
   events via POST, persists via a per-session writer goroutine (`internal/store`), and fans
   out live to SSE subscribers (`hub`). Auto-spawned by the first hook; users don't normally
   start it (`--foreground` / `--port` for dev). The `Server` value is the testable unit.
-- **`hv tui`** (`internal/tui`) — bubbletea terminal viewer (master-detail: sessions →
-  events → inspector). `--plain` gives line-per-event output (screen-reader/pipe safe);
-  `NO_COLOR` and `--no-animation` are honored.
 - **`hv serve`** (`internal/serve`) — thin launcher: ensures the daemon is up, then opens the
   browser at the daemon's embedded web UI. It is **not** a second server — the daemon serves
   the UI at `/`.
@@ -58,7 +55,7 @@ ships a tracked `.gitkeep` so `go:embed` always has something, and the binary se
 ```
 Claude Code hook ──stdin──> hv hook ──POST /events──> daemon ──> store (JSONL) ──> SSE /stream
                                                                           │
-                                                  TUI / Web UI <──── GET /api/... + SSE
+                                                          Web UI <──── GET /api/... + SSE
 ```
 
 Events are stored as JSONL, one file per session, at
@@ -73,7 +70,7 @@ to the data dir. Path resolution is centralized in `internal/paths`. Default por
   original hook payload kept verbatim**. Parsing is deliberately lenient (absent fields →
   zero values, not errors) so new upstream Claude Code fields never break capture. Hook
   metadata for standalone lane events (glyph, label, lane, severity) lives in
-  `internal/event/hooks.go` so the TUI and web client share rendering decisions.
+  `internal/event/hooks.go`, consumed by the web client to render each event.
 - **`internal/model`** — harness-agnostic domain types and the timeline logic.
   `BuildOperations` pairs `PreToolUse`/`PostToolUse` into `Operation`s (keyed by `tool_use_id`,
   so live upserts replace a running row in place). `BuildLaneEvents` reduces standalone

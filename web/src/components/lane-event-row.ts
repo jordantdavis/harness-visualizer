@@ -4,9 +4,8 @@ import type { LaneEvent } from '../api/types'
 import { lookupHook } from '../api/hooks'
 import { formatClock, formatFull } from '../util/time'
 
-/** Single timeline lane-event row: clock · glyph + label + gist. Glyph/label come
- *  from the shared hook registry (fetched by api/hooks.ts) so the TUI and
- *  web client cannot drift on rendering. */
+/** Single timeline lane-event row: clock · glyph + label + gist. Glyph/label
+ *  come from the hook registry (fetched by api/hooks.ts). */
 @customElement('hv-lane-event-row')
 export class LaneEventRow extends LitElement {
   @property({ attribute: false }) event!: LaneEvent

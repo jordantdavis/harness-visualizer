@@ -12,7 +12,7 @@ One binary (`hv`), three roles:
 
 - `hv hook` — hook forwarder; Claude Code runs this per hook event (reads stdin, POSTs to daemon, exits 0 always, <100ms)
 - `hv daemon` — HTTP capture server; auto-spawned by the first hook, you don't normally start it
-- `hv tui` — terminal viewer (master-detail: sessions → events → inspector)
+- `hv serve` — opens the web UI in a browser (ensures the daemon is up first)
 
 Events land as JSONL under `$XDG_DATA_HOME/hv/sessions/{session_id}.jsonl`
 (override with `HV_DATA_DIR`). Runtime files (port, pid, daemon log) live under
@@ -86,7 +86,7 @@ After install, just use Claude Code normally. The daemon starts itself on the fi
 event. To watch events live:
 
 ```bash
-hv tui
+hv serve
 ```
 
 Or inspect session files directly:

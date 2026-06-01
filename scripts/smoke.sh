@@ -211,7 +211,7 @@ MANUAL VERIFICATION (cannot be automated here)
 2. Open a new Claude Code session in any project.
 3. Trigger at least one tool use (e.g. ask Claude to run `ls`).
 4. In another terminal:
-     hv tui
+     hv serve
    You should see the session appear with PreToolUse / PostToolUse events.
 5. Or check the JSONL directly:
      ls "${HV_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hv}/sessions/"

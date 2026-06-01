@@ -1,5 +1,5 @@
 // Package event — hook registry: typed metadata for the non-pairable hook
-// events that get rendered as standalone lane rows in the TUI / web UI.
+// events that get rendered as standalone lane rows in the web UI.
 // Paired hooks (PreToolUse/PostToolUse, SubagentStart/SubagentStop,
 // PreCompact/PostCompact, etc.) are deliberately NOT in this registry —
 // they flow through the Operation model.

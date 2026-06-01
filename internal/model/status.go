@@ -2,8 +2,8 @@
 
 // Package model holds the harness-agnostic domain types and derivation logic
 // for the visualizer: tool operations, diffs, and the interleaved timeline.
-// It is the single source of truth shared by the HTTP API and (eventually) the
-// TUI. It depends only on internal/event and the standard library.
+// It is the single source of truth consumed by the HTTP API serving the web
+// UI. It depends only on internal/event and the standard library.
 package model
 
 import (

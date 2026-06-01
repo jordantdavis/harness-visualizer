@@ -11,8 +11,8 @@ import (
 
 // ExtractTarget returns a short, human-readable description of what an event
 // targeted: a file path, a command's first line, a prompt, a subagent type, or
-// a compact trigger. Returns "" when nothing useful is found. Unlike the TUI,
-// it does not truncate — the client elides for display.
+// a compact trigger. Returns "" when nothing useful is found. Does not
+// truncate — the client elides for display.
 func ExtractTarget(ev *event.Event) string {
 	if len(ev.Raw) == 0 {
 		return ""
