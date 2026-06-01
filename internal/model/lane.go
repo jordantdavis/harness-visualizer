@@ -244,3 +244,10 @@ func sortStrings(s []string) {
 		}
 	}
 }
+
+// LaneGistForTUI returns the per-hook one-line summary for an event. It is
+// exported so the TUI's targetGist can reuse the same extractors the web
+// timeline does, keeping the one-liners in sync across clients.
+func LaneGistForTUI(ev *event.Event) string {
+	return laneGist(ev)
+}
