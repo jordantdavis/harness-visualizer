@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	hvmodel "jordandavis.dev/harness-visualizer/internal/model"
 	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 	"jordandavis.dev/harness-visualizer/internal/store"
 )
@@ -94,6 +95,8 @@ func deriveStatus(ev *event.Event) eventStatus {
 		return statusOK
 	case "PostCompact":
 		return statusOK
+	case "PermissionDenied", "StopFailure":
+		return statusError
 	default:
 		return statusNeutral
 	}
@@ -146,6 +149,12 @@ func targetGist(ev *event.Event) string {
 		gist = fields.Prompt
 	case "Notification":
 		gist = fields.Notification
+	default:
+		// Lane events: delegate to the model extractor so TUI and web share
+		// the same one-liners.
+		if _, ok := event.Lookup(ev.HookEvent); ok {
+			gist = hvmodel.LaneGistForTUI(ev)
+		}
 	}
 	return clip(gist, 40)
 }

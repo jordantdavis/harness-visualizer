@@ -260,3 +260,57 @@ func TestDeriveStatusPostCompact(t *testing.T) {
 		t.Errorf("PostCompact = %v, want statusOK", got)
 	}
 }
+
+func TestDeriveStatusLaneEvents(t *testing.T) {
+	cases := []struct {
+		hook string
+		want eventStatus
+	}{
+		{"PermissionRequest", statusNeutral}, // warn → neutral (no warn status today)
+		{"PermissionDenied", statusError},
+		{"InstructionsLoaded", statusNeutral},
+		{"StopFailure", statusError},
+		{"UnknownNewHook", statusNeutral},
+	}
+	for _, tc := range cases {
+		t.Run(tc.hook, func(t *testing.T) {
+			ev := &event.Event{HookEvent: tc.hook, Raw: json.RawMessage(`{}`)}
+			if got := deriveStatus(ev); got != tc.want {
+				t.Errorf("deriveStatus(%s) = %v, want %v", tc.hook, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTargetGistLaneEvents(t *testing.T) {
+	cases := []struct {
+		hook string
+		raw  string
+		want string
+	}{
+		{"CwdChanged", `{"new_cwd":"/a/web"}`, "→ /a/web"},
+		{"PermissionRequest",
+			`{"tool_name":"Bash","tool_input":{"command":"npm test"}}`,
+			"Bash: npm test"},
+		{"InstructionsLoaded", `{"path":"CLAUDE.md","memory_type":"project"}`,
+			"CLAUDE.md (project)"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.hook, func(t *testing.T) {
+			ev := &event.Event{HookEvent: tc.hook, Raw: json.RawMessage(tc.raw)}
+			got := targetGist(ev)
+			if got != tc.want {
+				t.Errorf("targetGist(%s) = %q, want %q", tc.hook, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsLifecycleHookExcludesLaneEvents(t *testing.T) {
+	if isLifecycleHook("PermissionRequest") {
+		t.Error("PermissionRequest should NOT be lifecycle (gets warn glyph)")
+	}
+	if isLifecycleHook("CwdChanged") {
+		t.Error("CwdChanged should NOT be lifecycle (renders in lane)")
+	}
+}

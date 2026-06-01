@@ -159,6 +159,7 @@ func NewServer(st *store.Store) *Server {
 	s.mux.HandleFunc("/stream", s.handleStream)
 	s.mux.HandleFunc("/api/sessions", s.handleAPISessions)
 	s.mux.HandleFunc("/api/sessions/", s.handleAPISession)
+	s.mux.HandleFunc("/api/hooks", s.handleAPIHooks)
 	s.mux.Handle("/", web.Handler())
 	return s
 }

@@ -1,6 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { api } from '../api/client'
+import { loadHooks } from '../api/hooks'
 import { StreamController } from '../api/stream'
 import type { OperationDetail, SessionInfo, TimelineItem } from '../api/types'
 import './top-bar'
@@ -28,7 +29,7 @@ export class App extends LitElement {
     }
     .panes {
       display: grid;
-      grid-template-columns: 240px 1fr 380px;
+      grid-template-columns: 240px 1fr 520px;
       min-height: 0;
     }
     .pane {
@@ -63,6 +64,7 @@ export class App extends LitElement {
   connectedCallback() {
     super.connectedCallback()
     void this.loadSessions()
+    void loadHooks()
   }
 
   disconnectedCallback() {

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/model"
 	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
@@ -172,5 +173,74 @@ func TestAPIStillRoutesUnderRootMount(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("/api/sessions status %d — root mount shadowed the API", rec.Code)
+	}
+}
+
+func TestAPIHooks_ReturnsRegistry(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/hooks", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("content-type = %q", got)
+	}
+	var got []event.HookMeta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if len(got) != len(event.Hooks) {
+		t.Errorf("got %d entries, want %d", len(got), len(event.Hooks))
+	}
+	if got[0].Name == "" || got[0].Glyph == "" {
+		t.Errorf("first entry incomplete: %+v", got[0])
+	}
+}
+
+func TestAPIHooks_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/hooks", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status %d, want 405", rec.Code)
+	}
+}
+
+func TestAPITimeline_IncludesLaneEvents(t *testing.T) {
+	srv := newTestServer(t,
+		&event.Event{SessionID: "s1", HookEvent: "PreToolUse", ToolName: "Bash",
+			Raw: []byte(`{"tool_use_id":"u1","tool_input":{"command":"ls"}}`)},
+		&event.Event{SessionID: "s1", HookEvent: "PermissionRequest", ToolName: "Bash",
+			Raw: []byte(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`)},
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/s1/timeline", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	var items []model.TimelineItem
+	if err := json.Unmarshal(rec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	var sawEvent bool
+	for _, it := range items {
+		if it.Kind == "event" && it.Event != nil && it.Event.HookEvent == "PermissionRequest" {
+			sawEvent = true
+			if it.Event.Lane != "permission" {
+				t.Errorf("event.Lane = %q, want permission", it.Event.Lane)
+			}
+			if it.Event.Gist == "" {
+				t.Errorf("event.Gist empty")
+			}
+		}
+	}
+	if !sawEvent {
+		t.Errorf("no lane event in timeline; items=%+v", items)
 	}
 }

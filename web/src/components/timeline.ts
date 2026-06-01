@@ -3,6 +3,7 @@ import { customElement, property } from 'lit/decorators.js'
 import type { TimelineItem } from '../api/types'
 import './op-row'
 import './turn-row'
+import './lane-event-row'
 
 @customElement('hv-timeline')
 export class Timeline extends LitElement {
@@ -33,6 +34,7 @@ export class Timeline extends LitElement {
           ></hv-op-row>`
         }
         if (it.kind === 'turn' && it.turn) return html`<hv-turn-row .turn=${it.turn}></hv-turn-row>`
+        if (it.kind === 'event' && it.event) return html`<hv-lane-event-row .event=${it.event}></hv-lane-event-row>`
         return ''
       })}
     </div>`

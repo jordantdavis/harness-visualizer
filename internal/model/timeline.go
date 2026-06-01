@@ -2,8 +2,11 @@
 package model
 
 import (
+	"encoding/json"
 	"sort"
 	"time"
+
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Turn is one conversation turn from the harness transcript. tool_use blocks
@@ -17,23 +20,38 @@ type Turn struct {
 	At       time.Time `json:"at"`
 }
 
-// TimelineItem is one row in the unified, interleaved timeline. Exactly one of
-// Op / Turn is set, selected by Kind.
-type TimelineItem struct {
-	Kind string     `json:"kind"` // "operation" | "turn"
-	At   time.Time  `json:"at"`
-	Seq  int64      `json:"seq"`  // hook Seq when Kind=="operation"; 0 for turns
-	Op   *Operation `json:"op,omitempty"`
-	Turn *Turn      `json:"turn,omitempty"`
+// LaneEvent is one standalone (non-pairable) hook event rendered as its own
+// row in the unified timeline. The Gist is a one-line summary derived from
+// Raw by per-hook extractors in lane.go; Raw is preserved for inspector
+// drill-down. Severity mirrors the registry entry for client convenience.
+type LaneEvent struct {
+	ID        string          `json:"id"`
+	HookEvent string          `json:"hook_event"`
+	Lane      event.Lane      `json:"lane"`
+	Gist      string          `json:"gist"`
+	Severity  string          `json:"severity"`
+	Raw       json.RawMessage `json:"raw,omitempty"`
+	At        time.Time       `json:"at"`
+	Seq       int64           `json:"seq"`
 }
 
-// MergeTimeline merges operations and conversation turns into one
-// chronological list (Approach 1). Operations are authoritative; turns enrich.
-// Sort key is At; ties are broken by Seq so operations stay stable relative to
-// each other. When turns is empty the result is the operations alone (graceful
-// degradation).
-func MergeTimeline(ops []Operation, turns []Turn) []TimelineItem {
-	items := make([]TimelineItem, 0, len(ops)+len(turns))
+// TimelineItem is one row in the unified, interleaved timeline. Exactly one of
+// Op / Turn / Event is set, selected by Kind.
+type TimelineItem struct {
+	Kind  string     `json:"kind"` // "operation" | "turn" | "event"
+	At    time.Time  `json:"at"`
+	Seq   int64      `json:"seq"`
+	Op    *Operation `json:"op,omitempty"`
+	Turn  *Turn      `json:"turn,omitempty"`
+	Event *LaneEvent `json:"event,omitempty"`
+}
+
+// MergeTimeline merges operations, conversation turns, and standalone lane
+// events into one chronological list. Operations are authoritative; turns and
+// lane events enrich. Sort key is At; ties are broken by Seq so rows stay
+// stable relative to each other. Any of the input slices may be empty.
+func MergeTimeline(ops []Operation, turns []Turn, events []LaneEvent) []TimelineItem {
+	items := make([]TimelineItem, 0, len(ops)+len(turns)+len(events))
 	for i := range ops {
 		op := ops[i]
 		items = append(items, TimelineItem{Kind: "operation", At: op.StartedAt, Seq: op.Seq, Op: &op})
@@ -41,6 +59,10 @@ func MergeTimeline(ops []Operation, turns []Turn) []TimelineItem {
 	for i := range turns {
 		tn := turns[i]
 		items = append(items, TimelineItem{Kind: "turn", At: tn.At, Turn: &tn})
+	}
+	for i := range events {
+		ev := events[i]
+		items = append(items, TimelineItem{Kind: "event", At: ev.At, Seq: ev.Seq, Event: &ev})
 	}
 	sort.SliceStable(items, func(i, j int) bool {
 		if items[i].At.Equal(items[j].At) {

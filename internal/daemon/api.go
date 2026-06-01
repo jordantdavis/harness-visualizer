@@ -58,7 +58,8 @@ func (s *Server) handleAPITimeline(w http.ResponseWriter, r *http.Request, id st
 	}
 	ops := model.BuildOperations(events)
 	turns, _ := claudecode.ReadConversation(transcriptPathFromEvents(events))
-	items := model.MergeTimeline(ops, turns)
+	laneEvents := model.BuildLaneEvents(events)
+	items := model.MergeTimeline(ops, turns, laneEvents)
 	if items == nil {
 		items = []model.TimelineItem{}
 	}
@@ -83,6 +84,17 @@ func transcriptPathFromEvents(events []*event.Event) string {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// handleAPIHooks: GET /api/hooks — returns the shared hook metadata
+// registry (event.Hooks) so the web client renders lane events with the
+// same glyphs and labels the TUI uses.
+func (s *Server) handleAPIHooks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, event.Hooks)
 }
 
 // handleAPIOperation returns the heavy detail for one operation, identified by
