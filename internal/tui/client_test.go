@@ -42,6 +42,11 @@ func newTestServer(t *testing.T) *httptest.Server {
 		json.NewEncoder(w).Encode(canonicalSessions)
 	})
 
+	mux.HandleFunc("/api/sessions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(canonicalSessions)
+	})
+
 	mux.HandleFunc("/sessions/", func(w http.ResponseWriter, r *http.Request) {
 		// Pattern: /sessions/{id}/events
 		// Extract query param since=

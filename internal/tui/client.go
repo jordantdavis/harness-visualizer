@@ -73,21 +73,21 @@ func newHTTPClientAt(baseURL string) *HTTPClient {
 
 // Sessions implements Client.
 func (c *HTTPClient) Sessions() ([]store.SessionInfo, error) {
-	resp, err := c.http.Get(c.base + "/sessions")
+	resp, err := c.http.Get(c.base + "/api/sessions")
 	if err != nil {
-		return nil, fmt.Errorf("GET /sessions: %w", err)
+		return nil, fmt.Errorf("GET /api/sessions: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GET /sessions: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("GET /api/sessions: status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("GET /sessions: read body: %w", err)
+		return nil, fmt.Errorf("GET /api/sessions: read body: %w", err)
 	}
 	var infos []store.SessionInfo
 	if err := json.Unmarshal(body, &infos); err != nil {
-		return nil, fmt.Errorf("GET /sessions: decode: %w", err)
+		return nil, fmt.Errorf("GET /api/sessions: decode: %w", err)
 	}
 	return infos, nil
 }

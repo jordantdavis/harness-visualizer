@@ -1,5 +1,9 @@
 # Web UI Backend Foundation — Implementation Plan (Plan 1 of 2)
 
+## Status
+
+**COMPLETE & smoke-verified (2026-05-31).** All 11 tasks implemented via subagent-driven TDD on branch `feat/web-ui-backend-foundation`. `go build ./...`, `go vet ./...`, and `go test ./...` (all 9 packages) are green. Transcript schema (Task 7 Step 6) was validated against a real `~/.claude/projects/.../*.jsonl` — fields match (`type`, `timestamp` RFC3339, `message.role`/`content`, blocks `text`/`thinking`/`tool_use.id`). End-to-end smoke against a running daemon confirmed `/api/sessions`, `/api/sessions/{id}/timeline` (ops-only graceful degradation), and `/api/sessions/{id}/operations/{id}` (diff detail). A final code review added two follow-ups: a 404 guard for empty opID and a `Duration` wire-unit doc note. Plan 2 (Lit frontend + `go:embed` + `cchv serve`) is next.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the server-side domain layer (`internal/model`), the Claude Code conversation adapter (`internal/source/claudecode`), and the `/api` HTTP endpoints that expose a derived, interleaved timeline — so the Lit web UI (Plan 2) can be a dumb client.
