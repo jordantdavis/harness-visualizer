@@ -116,3 +116,120 @@ func TestBuildOperations_HeuristicFailurePost(t *testing.T) {
 		t.Fatalf("want one error op, got %+v", ops)
 	}
 }
+
+func TestBuildOperations_SubagentPairByID(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "SubagentStart", "", `{"subagent_id":"sa-1","subagent_type":"engineer"}`, t0),
+		ev(2, "SubagentStop", "", `{"subagent_id":"sa-1"}`, t0.Add(2*time.Second)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1", len(ops))
+	}
+	op := ops[0]
+	if op.Kind != "subagent" {
+		t.Fatalf("Kind = %q, want subagent", op.Kind)
+	}
+	if op.ID != "sa-1" {
+		t.Fatalf("ID = %q, want sa-1", op.ID)
+	}
+	// NOTE: Status is asserted in Task 7 once DeriveStatus handles SubagentStop.
+	// For this task, just confirm the pair was found (Status != StatusRunning).
+	if op.Status == StatusRunning {
+		t.Fatalf("Status = %q, want non-running (pair found)", op.Status)
+	}
+	if op.Duration != 2*time.Second {
+		t.Fatalf("Duration = %v, want 2s", op.Duration)
+	}
+}
+
+func TestBuildOperations_SubagentUnpairedIsRunning(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "SubagentStart", "", `{"subagent_id":"sa-3"}`, t0),
+	})
+	if len(ops) != 1 || ops[0].Kind != "subagent" || ops[0].Status != StatusRunning {
+		t.Fatalf("want one running subagent op, got %+v", ops)
+	}
+}
+
+func TestBuildOperations_SubagentHeuristicWithoutID(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "SubagentStart", "", `{}`, t0),
+		ev(2, "SubagentStop", "", `{}`, t0.Add(time.Second)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("want one paired subagent op, got %d", len(ops))
+	}
+	if ops[0].Duration != time.Second {
+		t.Fatalf("Duration = %v, want 1s", ops[0].Duration)
+	}
+}
+
+func TestBuildOperations_CompactPairByID(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreCompact", "", `{"compact_id":"c-1","trigger":"auto"}`, t0),
+		ev(2, "PostCompact", "", `{"compact_id":"c-1"}`, t0.Add(500*time.Millisecond)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1", len(ops))
+	}
+	op := ops[0]
+	if op.Kind != "compact" || op.ID != "c-1" {
+		t.Fatalf("unexpected op kind/ID: %+v", op)
+	}
+	// Status asserted in Task 7.
+	if op.Status == StatusRunning {
+		t.Fatalf("Status = %q, want non-running (pair found)", op.Status)
+	}
+}
+
+func TestBuildOperations_CompactUnpairedIsRunning(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreCompact", "", `{"compact_id":"c-2"}`, t0),
+	})
+	if len(ops) != 1 || ops[0].Kind != "compact" || ops[0].Status != StatusRunning {
+		t.Fatalf("want one running compact op, got %+v", ops)
+	}
+}
+
+func TestBuildOperations_CrossKindHeuristicIsolation(t *testing.T) {
+	// A SubagentStop must never close a PreCompact (or vice versa), even
+	// without IDs and even when Seq order would allow it.
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreCompact", "", `{}`, t0),
+		ev(2, "SubagentStop", "", `{}`, t0.Add(time.Second)),
+	})
+	// Result: one running compact + a standalone SubagentStop (not a Pre, so not an op).
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1 running compact", len(ops))
+	}
+	if ops[0].Kind != "compact" || ops[0].Status != StatusRunning {
+		t.Fatalf("unexpected op: %+v", ops[0])
+	}
+}
+
+func TestBuildOperations_MixedKindsChronological(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreToolUse", "Bash", `{"tool_use_id":"t1"}`, t0),
+		ev(2, "SubagentStart", "", `{"subagent_id":"sa"}`, t0.Add(time.Second)),
+		ev(3, "PostToolUse", "Bash", `{"tool_use_id":"t1","tool_response":{"exit_code":0}}`, t0.Add(2*time.Second)),
+		ev(4, "PreCompact", "", `{"compact_id":"c"}`, t0.Add(3*time.Second)),
+		ev(5, "SubagentStop", "", `{"subagent_id":"sa"}`, t0.Add(4*time.Second)),
+		ev(6, "PostCompact", "", `{"compact_id":"c"}`, t0.Add(5*time.Second)),
+	})
+	if len(ops) != 3 {
+		t.Fatalf("got %d ops, want 3 (tool, subagent, compact)", len(ops))
+	}
+	want := []string{"tool", "subagent", "compact"}
+	for i, w := range want {
+		if ops[i].Kind != w {
+			t.Errorf("ops[%d].Kind = %q, want %q", i, ops[i].Kind, w)
+		}
+	}
+}
