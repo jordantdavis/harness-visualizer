@@ -174,3 +174,37 @@ func TestAPIStillRoutesUnderRootMount(t *testing.T) {
 		t.Fatalf("/api/sessions status %d — root mount shadowed the API", rec.Code)
 	}
 }
+
+func TestAPIHooks_ReturnsRegistry(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/hooks", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Errorf("content-type = %q", got)
+	}
+	var got []event.HookMeta
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if len(got) != len(event.Hooks) {
+		t.Errorf("got %d entries, want %d", len(got), len(event.Hooks))
+	}
+	if got[0].Name == "" || got[0].Glyph == "" {
+		t.Errorf("first entry incomplete: %+v", got[0])
+	}
+}
+
+func TestAPIHooks_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/hooks", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status %d, want 405", rec.Code)
+	}
+}

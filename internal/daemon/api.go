@@ -85,6 +85,17 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+// handleAPIHooks: GET /api/hooks — returns the shared hook metadata
+// registry (event.Hooks) so the web client renders lane events with the
+// same glyphs and labels the TUI uses.
+func (s *Server) handleAPIHooks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	writeJSON(w, event.Hooks)
+}
+
 // handleAPIOperation returns the heavy detail for one operation, identified by
 // its tool_use_id. It re-reads the session and locates the Pre/Post pair.
 func (s *Server) handleAPIOperation(w http.ResponseWriter, r *http.Request, id, opID string) {
