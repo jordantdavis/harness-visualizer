@@ -35,6 +35,9 @@ func TestSubagentID(t *testing.T) {
 	if got := SubagentID(raw(`{}`)); got != "" {
 		t.Fatalf("SubagentID absent = %q, want \"\"", got)
 	}
+	if got := SubagentID(raw(``)); got != "" {
+		t.Fatalf("SubagentID empty = %q, want \"\"", got)
+	}
 	if got := SubagentID(raw(`not json`)); got != "" {
 		t.Fatalf("SubagentID malformed = %q, want \"\"", got)
 	}
@@ -49,6 +52,12 @@ func TestSubagentTarget(t *testing.T) {
 	}
 	if got := SubagentTarget(raw(`{}`)); got != "" {
 		t.Fatalf("absent = %q, want \"\"", got)
+	}
+	if got := SubagentTarget(raw(``)); got != "" {
+		t.Fatalf("SubagentTarget empty = %q, want \"\"", got)
+	}
+	if got := SubagentTarget(raw(`not json`)); got != "" {
+		t.Fatalf("SubagentTarget malformed = %q, want \"\"", got)
 	}
 }
 
@@ -65,6 +74,9 @@ func TestSubagentHasError(t *testing.T) {
 	if SubagentHasError(raw(`{}`)) {
 		t.Fatal("absent error should return false")
 	}
+	if SubagentHasError(raw(``)) {
+		t.Fatal("SubagentHasError empty should return false")
+	}
 	if SubagentHasError(raw(`not json`)) {
 		t.Fatal("malformed should return false")
 	}
@@ -76,6 +88,12 @@ func TestCompactID(t *testing.T) {
 	}
 	if got := CompactID(raw(`{}`)); got != "" {
 		t.Fatalf("absent = %q, want \"\"", got)
+	}
+	if got := CompactID(raw(``)); got != "" {
+		t.Fatalf("CompactID empty = %q, want \"\"", got)
+	}
+	if got := CompactID(raw(`not json`)); got != "" {
+		t.Fatalf("CompactID malformed = %q, want \"\"", got)
 	}
 }
 
@@ -89,6 +107,12 @@ func TestCompactTarget(t *testing.T) {
 	if got := CompactTarget(raw(`{}`)); got != "" {
 		t.Fatalf("absent = %q, want \"\"", got)
 	}
+	if got := CompactTarget(raw(``)); got != "" {
+		t.Fatalf("CompactTarget empty = %q, want \"\"", got)
+	}
+	if got := CompactTarget(raw(`not json`)); got != "" {
+		t.Fatalf("CompactTarget malformed = %q, want \"\"", got)
+	}
 }
 
 func TestPostToolUseFailureMessage(t *testing.T) {
@@ -100,5 +124,11 @@ func TestPostToolUseFailureMessage(t *testing.T) {
 	}
 	if got := PostToolUseFailureMessage(raw(`{}`)); got != "" {
 		t.Fatalf("absent = %q, want \"\"", got)
+	}
+	if got := PostToolUseFailureMessage(raw(``)); got != "" {
+		t.Fatalf("PostToolUseFailureMessage empty = %q, want \"\"", got)
+	}
+	if got := PostToolUseFailureMessage(raw(`not json`)); got != "" {
+		t.Fatalf("PostToolUseFailureMessage malformed = %q, want \"\"", got)
 	}
 }
