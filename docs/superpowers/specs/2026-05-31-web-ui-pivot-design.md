@@ -252,6 +252,17 @@ internal/web/embed.go    //go:embed dist  (+ a //go:build dev stub serving empty
 - Error-minimap on the scrollbar, deep links, command palette
 - Model B streaming (server-pushed derived deltas)
 - Full E2E test suite
+- **Stale-daemon version skew** (surfaced during Plan 2): `cchv serve` /
+  `EnsureDaemon` reuse *any* daemon that answers `/healthz`, with no version
+  check — so a daemon from an older binary squatting the port is silently reused
+  and serves stale (or missing) routes. Add a build/version field to `/healthz`
+  and have `cchv serve` detect a mismatch and warn or restart the daemon.
+- **`/timeline?after=` seq-cursor pagination** (surfaced during Plan 2): the
+  client already sends `?after={lastSeq}`, but `handleAPITimeline` ignores it and
+  always returns the full timeline (v1 full-refetch by design). Wire the cursor
+  through `store.Read(id, after)` with a `limit`, and switch the client from
+  full-replace to upsert-by-`Operation.ID` so large sessions don't fully
+  serialize on every nudge.
 
 ## H. Testing strategy
 
