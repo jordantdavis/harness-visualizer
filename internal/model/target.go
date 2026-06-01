@@ -6,30 +6,45 @@ import (
 	"strings"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 )
 
 // ExtractTarget returns a short, human-readable description of what an event
-// targeted: a file path, a command's first line, or a prompt. Returns "" when
-// nothing useful is found. Unlike the TUI, it does not truncate — the client
-// elides for display.
+// targeted: a file path, a command's first line, a prompt, a subagent type, or
+// a compact trigger. Returns "" when nothing useful is found. Unlike the TUI,
+// it does not truncate — the client elides for display.
 func ExtractTarget(ev *event.Event) string {
 	if len(ev.Raw) == 0 {
 		return ""
 	}
-	var fields struct {
-		ToolInput    json.RawMessage `json:"tool_input"`
-		Prompt       string          `json:"prompt"`
-		Notification string          `json:"notification"`
-	}
-	if err := json.Unmarshal(ev.Raw, &fields); err != nil {
-		return ""
-	}
 	switch ev.HookEvent {
-	case "PreToolUse", "PostToolUse":
+	case "PreToolUse", "PostToolUse", "PostToolUseFailure":
+		var fields struct {
+			ToolInput json.RawMessage `json:"tool_input"`
+		}
+		if err := json.Unmarshal(ev.Raw, &fields); err != nil {
+			return ""
+		}
 		return toolInputGist(ev.ToolName, fields.ToolInput)
+	case "SubagentStart", "SubagentStop":
+		return hooks.SubagentTarget(ev.Raw)
+	case "PreCompact", "PostCompact":
+		return hooks.CompactTarget(ev.Raw)
 	case "UserPromptSubmit":
+		var fields struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.Unmarshal(ev.Raw, &fields); err != nil {
+			return ""
+		}
 		return strings.TrimSpace(fields.Prompt)
 	case "Notification":
+		var fields struct {
+			Notification string `json:"notification"`
+		}
+		if err := json.Unmarshal(ev.Raw, &fields); err != nil {
+			return ""
+		}
 		return strings.TrimSpace(fields.Notification)
 	}
 	return ""

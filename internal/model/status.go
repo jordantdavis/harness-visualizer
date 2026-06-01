@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 )
 
 // Status is the derived lifecycle/result state of an operation, as a stable
@@ -24,15 +25,30 @@ const (
 	StatusNeutral Status = "neutral" // unknown / not pass-fail
 )
 
-// DeriveStatus inspects a single event. PreToolUse is running; PostToolUse is
-// resolved from tool_response.exit_code; everything else is neutral. Any parse
-// failure yields StatusNeutral.
+// DeriveStatus inspects a single event to derive its lifecycle status.
+//   PreToolUse                       → StatusRunning
+//   PostToolUse                      → from tool_response.exit_code
+//   PostToolUseFailure               → StatusError
+//   SubagentStop                     → StatusError if .error present, else StatusSuccess
+//   PostCompact                      → StatusSuccess
+//   anything else                    → StatusNeutral
+//
+// Parse failures fall through to StatusNeutral.
 func DeriveStatus(ev *event.Event) Status {
 	switch ev.HookEvent {
 	case "PreToolUse":
 		return StatusRunning
 	case "PostToolUse":
 		return postStatus(ev.Raw)
+	case "PostToolUseFailure":
+		return StatusError
+	case "SubagentStop":
+		if hooks.SubagentHasError(ev.Raw) {
+			return StatusError
+		}
+		return StatusSuccess
+	case "PostCompact":
+		return StatusSuccess
 	default:
 		return StatusNeutral
 	}

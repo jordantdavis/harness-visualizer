@@ -19,6 +19,12 @@ func TestDeriveStatus(t *testing.T) {
 		{"post without exit code is neutral", &event.Event{HookEvent: "PostToolUse", Raw: []byte(`{"tool_response":{}}`)}, StatusNeutral},
 		{"lifecycle is neutral", &event.Event{HookEvent: "SessionStart"}, StatusNeutral},
 		{"malformed raw is neutral", &event.Event{HookEvent: "PostToolUse", Raw: []byte(`not json`)}, StatusNeutral},
+		{"post failure is error", &event.Event{HookEvent: "PostToolUseFailure"}, StatusError},
+		{"post failure ignores raw", &event.Event{HookEvent: "PostToolUseFailure", Raw: []byte(`{"tool_response":{"exit_code":0}}`)}, StatusError},
+		{"subagent stop without error is success", &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{}`)}, StatusSuccess},
+		{"subagent stop with error is error", &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{"error":"boom"}`)}, StatusError},
+		{"subagent stop with empty error is success", &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{"error":""}`)}, StatusSuccess},
+		{"post compact is success", &event.Event{HookEvent: "PostCompact", Raw: []byte(`{}`)}, StatusSuccess},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

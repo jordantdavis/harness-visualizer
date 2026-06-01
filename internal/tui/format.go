@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
@@ -74,18 +75,25 @@ func statusGlyphStyled(s eventStatus, noColor bool, tok tokens) string {
 }
 
 // deriveStatus inspects the event's promoted fields and Raw to determine status.
-// Defensive: any parse failure yields statusNeutral.
+// Defensive: nil ev yields statusNeutral; any parse failure yields statusNeutral.
 func deriveStatus(ev *event.Event) eventStatus {
-	hook := ev.HookEvent
-	switch hook {
+	if ev == nil {
+		return statusNeutral
+	}
+	switch ev.HookEvent {
 	case "PreToolUse":
 		return statusRunning
 	case "PostToolUse":
 		return derivePostStatus(ev.Raw)
-	case "Stop", "SubagentStop", "SessionEnd":
-		return statusNeutral
-	case "SessionStart", "UserPromptSubmit", "Notification", "PreCompact":
-		return statusNeutral
+	case "PostToolUseFailure":
+		return statusError
+	case "SubagentStop":
+		if hooks.SubagentHasError(ev.Raw) {
+			return statusError
+		}
+		return statusOK
+	case "PostCompact":
+		return statusOK
 	default:
 		return statusNeutral
 	}
@@ -414,12 +422,15 @@ func fixedWidth() int {
 }
 
 // isLifecycleHook reports whether the hook event is a lifecycle-only event
-// (SessionStart, UserPromptSubmit, Notification, Stop, SubagentStop, SessionEnd,
-// PreCompact). These rows are rendered dim across the HOOK+TARGET columns.
+// (SessionStart, UserPromptSubmit, Notification, Stop, SessionEnd).
+// These rows are rendered dim across the HOOK+TARGET columns.
+//
+// SubagentStop and PreCompact are intentionally excluded: they are part of
+// paired ops with real status glyphs and must not be dimmed as lifecycle.
 func isLifecycleHook(hook string) bool {
 	switch hook {
 	case "SessionStart", "UserPromptSubmit", "Notification", "Stop",
-		"SubagentStop", "SessionEnd", "PreCompact":
+		"SessionEnd":
 		return true
 	}
 	// Also lifecycle if it's a folded pair with only lifecycle prefix.

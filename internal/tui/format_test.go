@@ -235,3 +235,28 @@ func TestFormatDurationMillis(t *testing.T) {
 		t.Errorf("formatDuration(250ms) = %q, want 250ms", got)
 	}
 }
+
+func TestDeriveStatusPostToolUseFailure(t *testing.T) {
+	ev := &event.Event{HookEvent: "PostToolUseFailure"}
+	if got := deriveStatus(ev); got != statusError {
+		t.Errorf("PostToolUseFailure = %v, want statusError", got)
+	}
+}
+
+func TestDeriveStatusSubagentStop(t *testing.T) {
+	ok := &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{}`)}
+	if got := deriveStatus(ok); got != statusOK {
+		t.Errorf("SubagentStop ok = %v, want statusOK", got)
+	}
+	err := &event.Event{HookEvent: "SubagentStop", Raw: []byte(`{"error":"boom"}`)}
+	if got := deriveStatus(err); got != statusError {
+		t.Errorf("SubagentStop err = %v, want statusError", got)
+	}
+}
+
+func TestDeriveStatusPostCompact(t *testing.T) {
+	ev := &event.Event{HookEvent: "PostCompact", Raw: []byte(`{}`)}
+	if got := deriveStatus(ev); got != statusOK {
+		t.Errorf("PostCompact = %v, want statusOK", got)
+	}
+}
