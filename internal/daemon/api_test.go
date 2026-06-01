@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
 	"jordandavis.dev/harness-visualizer/internal/model"
@@ -43,6 +44,39 @@ func TestAPISessions_ReturnsArray(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].ID != "s1" {
 		t.Fatalf("unexpected sessions: %+v", got)
+	}
+}
+
+// TestAPISessions_StartedAtPresentWhenEventsExist verifies that a session with
+// at least one event with a non-zero CapturedAt exposes started_at in the JSON
+// response.
+func TestAPISessions_StartedAtPresentWhenEventsExist(t *testing.T) {
+	ts := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	srv := newTestServer(t, &event.Event{
+		SessionID:  "s2",
+		HookEvent:  "SessionStart",
+		CapturedAt: ts,
+		Raw:        []byte(`{}`),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	var got []store.SessionInfo
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 session, got %d", len(got))
+	}
+	if got[0].StartedAt.IsZero() {
+		t.Errorf("started_at is zero; want %v", ts)
+	}
+	if !got[0].StartedAt.Equal(ts) {
+		t.Errorf("started_at = %v, want %v", got[0].StartedAt, ts)
 	}
 }
 

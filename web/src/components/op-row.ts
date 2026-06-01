@@ -1,6 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { Operation, Status } from '../api/types'
+import { formatClock, formatFull } from '../util/time'
 
 const GLYPH = {
   running: '▶',
@@ -9,7 +10,7 @@ const GLYPH = {
   neutral: '·',
 } satisfies Record<Status, string>
 
-/** Single timeline operation row: status glyph + tool name + target + duration. */
+/** Single timeline operation row: clock · status glyph + tool name + target + duration. */
 @customElement('hv-op-row')
 export class OpRow extends LitElement {
   @property({ attribute: false }) op!: Operation
@@ -28,6 +29,13 @@ export class OpRow extends LitElement {
     :host([selected]) {
       background: var(--sel-bg-foc);
       border-left-color: var(--accent);
+    }
+    .time {
+      display: inline-block;
+      width: 8ch;
+      color: var(--fg-faint);
+      margin-right: 1ch;
+      cursor: default;
     }
     .glyph {
       display: inline-block;
@@ -53,7 +61,9 @@ export class OpRow extends LitElement {
 
   render() {
     const op = this.op
-    return html`<span class="glyph ${op.status}">${GLYPH[op.status] ?? '·'}</span
+    const clock = formatClock(op.started_at)
+    return html`<span class="time" title=${formatFull(op.started_at)}>${clock}</span
+      ><span class="glyph ${op.status}">${GLYPH[op.status] ?? '·'}</span
       ><span class="tool">${op.tool}</span
       ><span class="target"> ${op.target}</span
       ><span class="dur">${this.dur(op.duration)}</span>`

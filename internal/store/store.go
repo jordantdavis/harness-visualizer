@@ -145,6 +145,9 @@ type SessionInfo struct {
 	EventCount int64     `json:"event_count"`
 	LastSeq    int64     `json:"last_seq"`
 	ModTime    time.Time `json:"mod_time"`
+	// StartedAt is the CapturedAt of the first valid event in the session.
+	// Zero when the session file is empty or contains no parseable events.
+	StartedAt time.Time `json:"started_at"`
 
 	// CWD is the working directory captured from the session's events
 	// (Phase 8d). project = filepath.Base(CWD). Empty when unknown.
@@ -183,6 +186,7 @@ func (s *Store) Sessions() ([]SessionInfo, error) {
 			ID:         id,
 			EventCount: sr.count,
 			LastSeq:    sr.last,
+			StartedAt:  sr.startedAt,
 			CWD:        sr.cwd,
 		}
 		if fi, err := e.Info(); err == nil {
@@ -259,12 +263,13 @@ func (s *Store) cachedTranscript(path string) transcriptResult {
 
 // scanResult holds all fields extracted from a single pass over a session file.
 type scanResult struct {
-	id              string // session ID from the first valid event
-	count           int64  // number of valid events
-	last            int64  // max Seq observed
-	cwd             string // first non-empty cwd (event.CWD preferred, Raw.cwd fallback)
-	transcriptPath  string // last non-empty transcript_path from Raw
-	firstUserPrompt string // prompt from the first UserPromptSubmit event
+	id              string    // session ID from the first valid event
+	count           int64     // number of valid events
+	last            int64     // max Seq observed
+	startedAt       time.Time // CapturedAt of the first valid event; zero when absent
+	cwd             string    // first non-empty cwd (event.CWD preferred, Raw.cwd fallback)
+	transcriptPath  string    // last non-empty transcript_path from Raw
+	firstUserPrompt string    // prompt from the first UserPromptSubmit event
 }
 
 // scanSession performs a single pass over a session JSONL file, extracting the
@@ -293,6 +298,9 @@ func scanSession(path string) (scanResult, error) {
 		}
 		if sr.id == "" {
 			sr.id = ev.SessionID
+		}
+		if sr.count == 0 && !ev.CapturedAt.IsZero() {
+			sr.startedAt = ev.CapturedAt
 		}
 		sr.count++
 		if ev.Seq > sr.last {

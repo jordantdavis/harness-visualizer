@@ -1,11 +1,14 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { SessionInfo } from '../api/types'
+import { formatFull, formatRelative } from '../util/time'
 
 @customElement('hv-session-list')
 export class SessionList extends LitElement {
   @property({ attribute: false }) sessions: SessionInfo[] = []
   @property() selectedId = ''
+  /** Current time for relative-time labels. Updated by <hv-app> every 30s. */
+  @property({ attribute: false }) now: Date = new Date()
 
   static styles = css`
     :host { display: block; height: 100%; overflow: auto; }
@@ -20,6 +23,7 @@ export class SessionList extends LitElement {
     }
     .proj { color: var(--fg); }
     .meta { color: var(--fg-dim); font-size: 11px; }
+    .age { cursor: default; }
   `
 
   private pick(id: string) {
@@ -42,7 +46,12 @@ export class SessionList extends LitElement {
           @click=${() => this.pick(s.id)}
         >
           <div class="proj">${this.project(s)}</div>
-          <div class="meta">${s.event_count} ev · ${s.id.slice(0, 8)}</div>
+          <div class="meta">
+            ${s.event_count} ev · ${s.id.slice(0, 8)} ·
+            <span class="age" title=${formatFull(s.mod_time)}
+              >${formatRelative(s.mod_time, this.now)}</span
+            >
+          </div>
         </div>`,
       )}
     </div>`
