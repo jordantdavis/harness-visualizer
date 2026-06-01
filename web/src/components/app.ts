@@ -29,7 +29,7 @@ export class App extends LitElement {
     }
     .panes {
       display: grid;
-      grid-template-columns: 240px 1fr 380px;
+      grid-template-columns: 240px 1fr 520px;
       min-height: 0;
     }
     .pane {

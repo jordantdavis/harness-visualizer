@@ -27,4 +27,19 @@ describe('hv-app', () => {
     expect(root.querySelector('hv-inspector')).toBeTruthy()
     el.remove()
   })
+
+  it('uses widened inspector column (520px)', async () => {
+    const el = document.createElement('hv-app') as any
+    document.body.appendChild(el)
+    await el.updateComplete
+
+    // The styles are static; assert against the constructor's static styles.
+    const css = (el.constructor as typeof HTMLElement & { styles: unknown }).styles
+    const cssText = Array.isArray(css) ? css.map((c) => String(c)).join('\n') : String(css)
+    expect(cssText).toContain('520px')
+    // And does NOT still contain the old 380px width for the inspector.
+    expect(cssText).not.toMatch(/240px 1fr 380px/)
+
+    el.remove()
+  })
 })
