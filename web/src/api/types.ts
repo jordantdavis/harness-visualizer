@@ -8,6 +8,7 @@ export interface SessionInfo {
 }
 
 export type Status = 'running' | 'success' | 'error' | 'neutral'
+export type Severity = 'info' | 'warn' | 'error' | 'dim'
 
 export interface Operation {
   id: string
@@ -27,12 +28,24 @@ export interface Turn {
   at: string
 }
 
+export interface LaneEvent {
+  id: string
+  hook_event: string
+  lane: string
+  gist: string
+  severity: Severity
+  raw?: unknown
+  at: string
+  seq: number
+}
+
 export interface TimelineItem {
-  kind: 'operation' | 'turn'
+  kind: 'operation' | 'turn' | 'event'
   at: string
   seq: number
   op?: Operation
   turn?: Turn
+  event?: LaneEvent
 }
 
 export interface DiffOp {
@@ -51,4 +64,12 @@ export interface OperationDetail {
   exit_code?: number
   raw_pre?: unknown
   raw_post?: unknown
+}
+
+export interface HookMeta {
+  name: string
+  glyph: string
+  label: string
+  lane: string
+  severity: Severity
 }
