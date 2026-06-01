@@ -107,3 +107,9 @@ Run daemon in the foreground (dev/debug mode):
 ```bash
 hv daemon --foreground
 ```
+
+Delete all captured session JSONL files (prompts for confirmation; use `--yes` to skip):
+
+```bash
+hv sessions clear
+```

@@ -172,6 +172,34 @@ do
 done
 
 # ---------------------------------------------------------------------------
+# Step 6 — sessions clear
+# ---------------------------------------------------------------------------
+printf '==> testing: hv sessions clear\n'
+
+# Confirm the session JSONL from earlier steps exists.
+[[ -f "$SESSION_FILE" ]] || fail "session file missing before sessions clear test"
+pass "session file present before clear"
+
+# Place a decoy non-jsonl file that must survive deletion.
+DECOY="$DATA_DIR/sessions/keep.txt"
+printf 'do not delete me\n' > "$DECOY"
+
+# dry-run: lists the file, deletes nothing.
+DRY_OUT="$("$BIN" sessions clear --dry-run)"
+echo "$DRY_OUT" | grep -q "smoke-test.jsonl" \
+  || fail "dry-run output did not list smoke-test.jsonl"
+[[ -f "$SESSION_FILE" ]] || fail "dry-run deleted the session file (it should not)"
+pass "sessions clear --dry-run lists file without deleting"
+
+# --yes: deletes the JSONL, leaves the decoy.
+"$BIN" sessions clear --yes
+EXIT_CODE=$?
+[[ $EXIT_CODE -eq 0 ]] || fail "sessions clear --yes exited $EXIT_CODE (want 0)"
+[[ ! -f "$SESSION_FILE" ]] || fail "session file still exists after sessions clear --yes"
+[[ -f "$DECOY" ]] || fail "keep.txt was deleted by sessions clear (it should not be)"
+pass "sessions clear --yes removed JSONL and left non-jsonl decoy intact"
+
+# ---------------------------------------------------------------------------
 # Done
 # ---------------------------------------------------------------------------
 printf '\n\033[32m==> smoke test PASSED\033[0m\n\n'
