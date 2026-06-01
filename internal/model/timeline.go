@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"sort"
 	"time"
+
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Turn is one conversation turn from the harness transcript. tool_use blocks
@@ -25,7 +27,7 @@ type Turn struct {
 type LaneEvent struct {
 	ID        string          `json:"id"`
 	HookEvent string          `json:"hook_event"`
-	Lane      string          `json:"lane"`
+	Lane      event.Lane      `json:"lane"`
 	Gist      string          `json:"gist"`
 	Severity  string          `json:"severity"`
 	Raw       json.RawMessage `json:"raw,omitempty"`

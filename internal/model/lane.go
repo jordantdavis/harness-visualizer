@@ -8,6 +8,7 @@ package model
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
@@ -25,7 +26,7 @@ func BuildLaneEvents(events []*event.Event) []LaneEvent {
 		out = append(out, LaneEvent{
 			ID:        ev.ID,
 			HookEvent: ev.HookEvent,
-			Lane:      string(meta.Lane),
+			Lane:      meta.Lane,
 			Gist:      laneGist(ev),
 			Severity:  meta.Severity,
 			Raw:       ev.Raw,
@@ -228,21 +229,13 @@ func firstStringField(raw json.RawMessage) string {
 		}
 	}
 	// Fallback: lexicographically first non-empty string.
-	sortStrings(keys)
+	sort.Strings(keys)
 	for _, k := range keys {
 		if s, ok := m[k].(string); ok && s != "" {
 			return s
 		}
 	}
 	return ""
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }
 
 // LaneGistForTUI returns the per-hook one-line summary for an event. It is
