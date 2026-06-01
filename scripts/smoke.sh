@@ -2,7 +2,7 @@
 # smoke.sh — end-to-end plumbing smoke test for hv.
 #
 # Validates the capture path without a real Claude Code session:
-#   build → hook invocation → daemon auto-spawn → event lands in JSONL.
+#   build → daemon start → hook invocation → event lands in JSONL.
 #
 # Usage:
 #   ./scripts/smoke.sh
@@ -44,27 +44,42 @@ go build -o "$BIN" "$REPO_ROOT/cmd/hv" || fail "go build failed"
 pass "build"
 
 # ---------------------------------------------------------------------------
-# Step 2 — First hook invocation (daemon not running → spawn + drop event)
+# Step 2 — Start daemon explicitly on a random port in the temp data dir.
+#           An explicit start isolates the test from any daemon already
+#           running on the default port (7842) from a live Claude Code session.
 # ---------------------------------------------------------------------------
-printf '==> sending hook payload 1 (spawns daemon, event dropped)\n'
+printf '==> starting daemon (foreground, port 0)\n'
 export HV_DATA_DIR="$DATA_DIR"
+
+# Spawn daemon in background; capture its PID for cleanup.
+"$BIN" daemon --foreground --port 0 >"$DATA_DIR/daemon.log" 2>&1 &
+DAEMON_PID=$!
+
+# Wait for the daemon to write its port file (up to 3 s).
+PORT_FILE="$DATA_DIR/daemon.port"
+for i in $(seq 1 30); do
+  if [[ -s "$PORT_FILE" ]]; then
+    break
+  fi
+  sleep 0.1
+done
+[[ -s "$PORT_FILE" ]] || fail "daemon did not write port file within 3s"
+DAEMON_PORT="$(cat "$PORT_FILE")"
+pass "daemon started on port $DAEMON_PORT"
+
+# ---------------------------------------------------------------------------
+# Step 3 — First hook invocation (PreToolUse)
+# ---------------------------------------------------------------------------
+printf '==> sending hook payload 1 (PreToolUse)\n'
 
 printf '{"hook_event_name":"PreToolUse","session_id":"smoke-test","tool_name":"Bash","cwd":"/tmp"}' \
   | "$BIN" hook
 
-# Give the daemon time to bind.
-sleep 0.5
-pass "hook 1 (daemon spawn)"
+sleep 0.3
+pass "hook 1 (PreToolUse posted)"
 
 # ---------------------------------------------------------------------------
-# Step 3 — Capture the daemon PID for cleanup
-# ---------------------------------------------------------------------------
-if [[ -f "$DATA_DIR/daemon.pid" ]]; then
-  DAEMON_PID="$(cat "$DATA_DIR/daemon.pid")"
-fi
-
-# ---------------------------------------------------------------------------
-# Step 4 — Second hook invocation (daemon running → event lands)
+# Step 4 — Second hook invocation (PostToolUse)
 # ---------------------------------------------------------------------------
 printf '==> sending hook payload 2 (event should land in JSONL)\n'
 
@@ -72,10 +87,21 @@ printf '{"hook_event_name":"PostToolUse","session_id":"smoke-test","tool_name":"
   | "$BIN" hook
 
 sleep 0.3
-pass "hook 2 (event posted)"
+pass "hook 2 (PostToolUse posted)"
 
 # ---------------------------------------------------------------------------
-# Step 5 — Assert JSONL exists and contains the event
+# Step 4b — Third hook invocation: PostToolUseFailure (Tier 1 hook)
+# ---------------------------------------------------------------------------
+printf '==> sending hook payload 3 (PostToolUseFailure)\n'
+
+printf '{"hook_event_name":"PostToolUseFailure","session_id":"smoke-test","tool_name":"Bash","cwd":"/tmp","tool_use_id":"smoke-uid","error":"smoke failure"}' \
+  | "$BIN" hook
+
+sleep 0.3
+pass "hook 3 (PostToolUseFailure posted)"
+
+# ---------------------------------------------------------------------------
+# Step 5 — Assert JSONL exists and contains the events
 # ---------------------------------------------------------------------------
 SESSION_FILE="$DATA_DIR/sessions/smoke-test.jsonl"
 
@@ -93,6 +119,10 @@ pass "hook_event captured in JSONL"
 grep -q '"tool_name":"Bash"' "$SESSION_FILE" \
   || fail "tool_name not found in JSONL"
 pass "tool_name captured in JSONL"
+
+grep -q '"hook_event":"PostToolUseFailure"' "$SESSION_FILE" \
+  || fail "hook_event PostToolUseFailure not found in JSONL"
+pass "PostToolUseFailure captured in JSONL"
 
 # ---------------------------------------------------------------------------
 # Done
