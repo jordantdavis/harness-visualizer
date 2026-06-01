@@ -92,12 +92,12 @@ func runWithRemover(
 		for _, f := range files {
 			fmt.Fprintln(out, f)
 		}
-		fmt.Fprintf(out, "would delete %d session files (%s)\n", len(files), formatSize(totalSize))
+		fmt.Fprintf(out, "would delete %d session %s (%s)\n", len(files), plural(len(files), "file", "files"), formatSize(totalSize))
 		return 0
 	}
 
 	if !flagYes {
-		fmt.Fprintf(out, "Delete %d sessions (%s)? [y/N] ", len(files), formatSize(totalSize))
+		fmt.Fprintf(out, "Delete %d %s (%s)? [y/N] ", len(files), plural(len(files), "session", "sessions"), formatSize(totalSize))
 		answer, _ := bufio.NewReader(stdin).ReadString('\n')
 		answer = strings.TrimSpace(strings.ToLower(answer))
 		if answer != "y" && answer != "yes" {
@@ -115,7 +115,7 @@ func runWithRemover(
 	}
 
 	deleted := len(files) - failed
-	fmt.Fprintf(out, "deleted %d session files (%s)\n", deleted, formatSize(totalSize))
+	fmt.Fprintf(out, "deleted %d session %s (%s)\n", deleted, plural(deleted, "file", "files"), formatSize(totalSize))
 
 	if failed > 0 {
 		return 1
@@ -144,6 +144,14 @@ func collectJSONL(dir string) ([]string, int64, error) {
 		total += info.Size()
 	}
 	return files, total, nil
+}
+
+// plural picks singular or plural form by count.
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // formatSize renders a byte count as a human-readable string:

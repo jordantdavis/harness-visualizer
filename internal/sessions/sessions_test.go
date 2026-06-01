@@ -228,8 +228,8 @@ func TestClear_NonJSONLFilesUntouched(t *testing.T) {
 		t.Error("subdir/b.jsonl should still exist — only top-level files are deleted")
 	}
 	// Summary should mention 1 deleted (only a.jsonl).
-	if !strings.Contains(out.String(), "deleted 1 session files") {
-		t.Errorf("output=%q, want 'deleted 1 session files'", out.String())
+	if !strings.Contains(out.String(), "deleted 1 session file ") {
+		t.Errorf("output=%q, want 'deleted 1 session file '", out.String())
 	}
 }
 
