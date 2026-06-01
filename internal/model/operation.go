@@ -2,11 +2,11 @@
 package model
 
 import (
-	"encoding/json"
 	"sort"
 	"time"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 )
 
 // Operation is one tool invocation: a PreToolUse paired with its PostToolUse
@@ -43,7 +43,7 @@ func BuildOperations(events []*event.Event) []Operation {
 		}
 		idx := len(posts)
 		posts = append(posts, slot{ev: e})
-		if id := toolUseID(e.Raw); id != "" {
+		if id := hooks.ToolUseID(e.Raw); id != "" {
 			postByID[id] = idx
 		}
 		if e.ToolName != "" {
@@ -58,7 +58,7 @@ func BuildOperations(events []*event.Event) []Operation {
 		}
 		op := Operation{
 			Kind:      "tool",
-			ID:        toolUseID(e.Raw),
+			ID:        hooks.ToolUseID(e.Raw),
 			Tool:      e.ToolName,
 			Status:    StatusRunning,
 			StartedAt: e.CapturedAt,
@@ -90,19 +90,4 @@ func BuildOperations(events []*event.Event) []Operation {
 
 	sort.SliceStable(ops, func(i, j int) bool { return ops[i].Seq < ops[j].Seq })
 	return ops
-}
-
-// toolUseID looks for "tool_use_id" at the top level of raw JSON. Returns ""
-// on any error or absence.
-func toolUseID(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var w struct {
-		ToolUseID string `json:"tool_use_id"`
-	}
-	if err := json.Unmarshal(raw, &w); err != nil {
-		return ""
-	}
-	return w.ToolUseID
 }

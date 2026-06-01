@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 )
 
 // OperationDetail is the heavy, lazily-fetched payload for one operation. Only
@@ -27,7 +28,7 @@ type OperationDetail struct {
 // optional Post. post may be nil for a still-running operation.
 func BuildOperationDetail(pre, post *event.Event) OperationDetail {
 	d := OperationDetail{
-		ID:         toolUseID(pre.Raw),
+		ID:         hooks.ToolUseID(pre.Raw),
 		Tool:       pre.ToolName,
 		DetailKind: "generic",
 		RawPre:     pre.Raw,
