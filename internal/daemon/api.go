@@ -9,6 +9,7 @@ import (
 	"jordandavis.dev/harness-visualizer/internal/event"
 	"jordandavis.dev/harness-visualizer/internal/model"
 	"jordandavis.dev/harness-visualizer/internal/source/claudecode"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
@@ -100,7 +101,7 @@ func (s *Server) handleAPIOperation(w http.ResponseWriter, r *http.Request, id, 
 	}
 	var pre, post *event.Event
 	for _, e := range events {
-		if toolUseIDOf(e.Raw) != opID {
+		if hooks.ToolUseID(e.Raw) != opID {
 			continue
 		}
 		switch e.HookEvent {
@@ -115,15 +116,4 @@ func (s *Server) handleAPIOperation(w http.ResponseWriter, r *http.Request, id, 
 		return
 	}
 	writeJSON(w, model.BuildOperationDetail(pre, post))
-}
-
-// toolUseIDOf extracts the top-level tool_use_id from a raw payload.
-func toolUseIDOf(raw json.RawMessage) string {
-	var w struct {
-		ToolUseID string `json:"tool_use_id"`
-	}
-	if json.Unmarshal(raw, &w) != nil {
-		return ""
-	}
-	return w.ToolUseID
 }
