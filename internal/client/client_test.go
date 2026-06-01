@@ -259,3 +259,26 @@ func TestRun_PanicIsRecovered(t *testing.T) {
 		t.Errorf("Run() = %d, want 0", code)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// daemonHealthy
+// ---------------------------------------------------------------------------
+
+func TestDaemonHealthy(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	addr := strings.TrimPrefix(ts.URL, "http://")
+	if !daemonHealthy(addr) {
+		t.Fatalf("daemonHealthy(%q) = false, want true", addr)
+	}
+	if daemonHealthy("127.0.0.1:1") {
+		t.Fatal("daemonHealthy on a dead port = true, want false")
+	}
+}

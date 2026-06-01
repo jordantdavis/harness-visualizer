@@ -1,0 +1,153 @@
+import { css, html, LitElement } from 'lit'
+import { customElement, state } from 'lit/decorators.js'
+import { api } from '../api/client'
+import { StreamController } from '../api/stream'
+import type { OperationDetail, SessionInfo, TimelineItem } from '../api/types'
+import './top-bar'
+import './session-list'
+import './timeline'
+import './inspector'
+
+@customElement('cchv-app')
+export class App extends LitElement {
+  @state() private sessions: SessionInfo[] = []
+  @state() private selectedSessionId = ''
+  @state() private items: TimelineItem[] = []
+  @state() private selectedOpId = ''
+  @state() private detail?: OperationDetail
+  @state() private daemonOk = false
+  @state() private live = false
+
+  private stream = new StreamController(() => void this.refreshTimeline())
+
+  static styles = css`
+    :host {
+      display: grid;
+      grid-template-rows: 28px 1fr;
+      height: 100vh;
+    }
+    .panes {
+      display: grid;
+      grid-template-columns: 240px 1fr 380px;
+      min-height: 0;
+    }
+    .pane {
+      min-height: 0;
+      overflow: auto;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .pane:last-child { border-right: none; }
+    .ptitle {
+      color: var(--fg-dim);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .body { flex: 1; min-height: 0; overflow: auto; }
+  `
+
+  constructor() {
+    super()
+    this.addEventListener('select-session', (e: Event) => {
+      void this.selectSession((e as CustomEvent<string>).detail)
+    })
+    this.addEventListener('select-op', (e: Event) => {
+      void this.selectOp((e as CustomEvent<string>).detail)
+    })
+  }
+
+  connectedCallback() {
+    super.connectedCallback()
+    void this.loadSessions()
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback()
+    this.stream.disconnect()
+  }
+
+  private async loadSessions() {
+    try {
+      this.sessions = await api.sessions()
+      this.daemonOk = true
+    } catch {
+      this.daemonOk = false
+    }
+  }
+
+  private async selectSession(id: string) {
+    this.selectedSessionId = id
+    this.selectedOpId = ''
+    this.detail = undefined
+    await this.refreshTimeline()
+    this.stream.connect(id)
+    this.live = true
+  }
+
+  private async refreshTimeline() {
+    const id = this.selectedSessionId
+    if (!id) return
+    try {
+      const items = await api.timeline(id)
+      if (this.selectedSessionId !== id) return // a newer selection superseded this fetch
+      this.items = items
+      this.daemonOk = true
+    } catch {
+      if (this.selectedSessionId !== id) return
+      this.daemonOk = false
+      this.live = false
+    }
+  }
+
+  private async selectOp(opId: string) {
+    if (!this.selectedSessionId) return
+    this.selectedOpId = opId
+    try {
+      this.detail = await api.operation(this.selectedSessionId, opId)
+    } catch {
+      this.detail = undefined
+    }
+  }
+
+  render() {
+    return html`
+      <cchv-top-bar .live=${this.live} .daemonOk=${this.daemonOk}></cchv-top-bar>
+      <div class="panes">
+        <div class="pane">
+          <div class="ptitle">sessions</div>
+          <div class="body">
+            <cchv-session-list
+              .sessions=${this.sessions}
+              .selectedId=${this.selectedSessionId}
+            ></cchv-session-list>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="ptitle">timeline</div>
+          <div class="body">
+            <cchv-timeline
+              .items=${this.items}
+              .selectedOpId=${this.selectedOpId}
+            ></cchv-timeline>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="ptitle">inspector</div>
+          <div class="body">
+            <cchv-inspector .detail=${this.detail}></cchv-inspector>
+          </div>
+        </div>
+      </div>
+    `
+  }
+}
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'cchv-app': App
+  }
+}

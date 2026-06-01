@@ -22,6 +22,7 @@ import (
 	"jordandavis.dev/cc-harness-visualizer/internal/event"
 	"jordandavis.dev/cc-harness-visualizer/internal/paths"
 	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/cc-harness-visualizer/internal/web"
 )
 
 const (
@@ -158,6 +159,7 @@ func NewServer(st *store.Store) *Server {
 	s.mux.HandleFunc("/stream", s.handleStream)
 	s.mux.HandleFunc("/api/sessions", s.handleAPISessions)
 	s.mux.HandleFunc("/api/sessions/", s.handleAPISession)
+	s.mux.Handle("/", web.Handler())
 	return s
 }
 

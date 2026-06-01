@@ -222,3 +222,35 @@ func daemonLogPath() string {
 	}
 	return dir + "/daemon.log"
 }
+
+// EnsureDaemon returns the daemon's "host:port", spawning the daemon if it is
+// not already reachable. It blocks up to ~3s for a freshly-spawned daemon to
+// write its port file and answer /healthz. Used by `cchv serve`.
+func EnsureDaemon() (string, error) {
+	addr := resolveAddr()
+	if daemonHealthy(addr) {
+		return addr, nil
+	}
+	spawnDaemon()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		addr = resolveAddr() // a fresh daemon may pick a new port
+		if daemonHealthy(addr) {
+			return addr, nil
+		}
+	}
+	return "", fmt.Errorf("daemon did not become healthy at %s", addr)
+}
+
+// daemonHealthy reports whether GET http://addr/healthz returns 200 promptly.
+func daemonHealthy(addr string) bool {
+	c := &http.Client{Timeout: 200 * time.Millisecond}
+	resp, err := c.Get("http://" + addr + "/healthz")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}

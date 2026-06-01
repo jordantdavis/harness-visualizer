@@ -122,3 +122,23 @@ func TestAPIOperationDetail_EmptyOpIDNotFound(t *testing.T) {
 		t.Fatalf("status %d, want 404 (empty opID must not match)", rec.Code)
 	}
 }
+
+func TestRootServesWebPage(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("root status %d (body=%s)", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAPIStillRoutesUnderRootMount(t *testing.T) {
+	srv := newTestServer(t, &event.Event{SessionID: "s1", HookEvent: "SessionStart", Raw: []byte(`{}`)})
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/api/sessions status %d — root mount shadowed the API", rec.Code)
+	}
+}

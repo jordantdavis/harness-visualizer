@@ -16,6 +16,7 @@ import (
 
 	"jordandavis.dev/cc-harness-visualizer/internal/client"
 	"jordandavis.dev/cc-harness-visualizer/internal/daemon"
+	"jordandavis.dev/cc-harness-visualizer/internal/serve"
 	"jordandavis.dev/cc-harness-visualizer/internal/tui"
 )
 
@@ -34,6 +35,8 @@ func main() {
 		os.Exit(daemon.Run(rest))
 	case "tui":
 		os.Exit(tui.Run(rest))
+	case "serve":
+		os.Exit(serve.Run(rest))
 	case "-h", "--help", "help":
 		usage(os.Stdout)
 		os.Exit(0)
@@ -51,5 +54,6 @@ usage:
   cchv hook       forward a hook payload from stdin to the daemon (default)
   cchv daemon     run the capture daemon (--foreground, --port)
   cchv tui        open the terminal viewer
+  cchv serve      ensure the daemon is up and open the web UI in a browser
 `)
 }

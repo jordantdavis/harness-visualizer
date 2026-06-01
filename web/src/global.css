@@ -1,0 +1,31 @@
+:root {
+  --bg: #11141a;
+  --bg-pane: #11141a;
+  --fg: #c9d1d9;
+  --fg-dim: #768390;
+  --fg-faint: #4a525c;
+  --sel-bg: #1d2530;
+  --sel-bg-foc: #23303f;
+  --accent: #58a6ff;
+  --green: #56d364;
+  --red: #f85149;
+  --yellow: #e3b341;
+  --magenta: #bc8cff;
+  --bar-bg: #161b22;
+  --border: #2d333b;
+  --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", "Menlo", "DejaVu Sans Mono", monospace;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: #05070a;
+  color: var(--fg);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  font-variant-ligatures: none;
+}
+
+cchv-app { display: block; height: 100vh; }
