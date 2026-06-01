@@ -133,10 +133,8 @@ func TestBuildOperations_SubagentPairByID(t *testing.T) {
 	if op.ID != "sa-1" {
 		t.Fatalf("ID = %q, want sa-1", op.ID)
 	}
-	// NOTE: Status is asserted in Task 7 once DeriveStatus handles SubagentStop.
-	// For this task, just confirm the pair was found (Status != StatusRunning).
-	if op.Status == StatusRunning {
-		t.Fatalf("Status = %q, want non-running (pair found)", op.Status)
+	if op.Status != StatusSuccess {
+		t.Fatalf("Status = %q, want success", op.Status)
 	}
 	if op.Duration != 2*time.Second {
 		t.Fatalf("Duration = %v, want 2s", op.Duration)
@@ -180,9 +178,8 @@ func TestBuildOperations_CompactPairByID(t *testing.T) {
 	if op.Kind != "compact" || op.ID != "c-1" {
 		t.Fatalf("unexpected op kind/ID: %+v", op)
 	}
-	// Status asserted in Task 7.
-	if op.Status == StatusRunning {
-		t.Fatalf("Status = %q, want non-running (pair found)", op.Status)
+	if op.Status != StatusSuccess {
+		t.Fatalf("Status = %q, want success", op.Status)
 	}
 }
 
@@ -210,6 +207,17 @@ func TestBuildOperations_CrossKindHeuristicIsolation(t *testing.T) {
 	}
 	if ops[0].Kind != "compact" || ops[0].Status != StatusRunning {
 		t.Fatalf("unexpected op: %+v", ops[0])
+	}
+}
+
+func TestBuildOperations_SubagentStopWithError(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "SubagentStart", "", `{"subagent_id":"sa-2"}`, t0),
+		ev(2, "SubagentStop", "", `{"subagent_id":"sa-2","error":"timeout"}`, t0.Add(time.Second)),
+	})
+	if len(ops) != 1 || ops[0].Status != StatusError {
+		t.Fatalf("want one error op, got %+v", ops)
 	}
 }
 
