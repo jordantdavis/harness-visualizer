@@ -58,7 +58,7 @@ func (s *Server) handleAPITimeline(w http.ResponseWriter, r *http.Request, id st
 	}
 	ops := model.BuildOperations(events)
 	turns, _ := claudecode.ReadConversation(transcriptPathFromEvents(events))
-	items := model.MergeTimeline(ops, turns)
+	items := model.MergeTimeline(ops, turns, nil)
 	if items == nil {
 		items = []model.TimelineItem{}
 	}
