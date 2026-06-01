@@ -106,7 +106,7 @@ func (s *Server) handleAPIOperation(w http.ResponseWriter, r *http.Request, id, 
 		switch e.HookEvent {
 		case "PreToolUse":
 			pre = e
-		case "PostToolUse":
+		case "PostToolUse", "PostToolUseFailure":
 			post = e
 		}
 	}

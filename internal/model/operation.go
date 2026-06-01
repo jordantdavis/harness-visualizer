@@ -24,10 +24,11 @@ type Operation struct {
 	Seq       int64         `json:"seq"`            // Pre.Seq — the chronological anchor
 }
 
-// BuildOperations pairs PreToolUse with PostToolUse events and returns the
-// resulting operations in chronological (Seq) order. Input need not be sorted.
-// Pairing prefers a stable tool_use_id match, then falls back to the first
-// unclaimed Post of the same tool with a later Seq. Non-tool events are ignored.
+// BuildOperations pairs PreToolUse with PostToolUse or PostToolUseFailure events
+// and returns the resulting operations in chronological (Seq) order. Input need
+// not be sorted. Pairing prefers a stable tool_use_id match, then falls back to
+// the first unclaimed Post of the same tool with a later Seq. Non-tool events
+// are ignored.
 func BuildOperations(events []*event.Event) []Operation {
 	type slot struct {
 		ev      *event.Event

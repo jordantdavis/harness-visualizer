@@ -133,6 +133,38 @@ func TestRootServesWebPage(t *testing.T) {
 	}
 }
 
+// TestAPIOperationDetail_PostToolUseFailure verifies that the detail endpoint
+// surfaces the post event when a tool call ends with PostToolUseFailure (not
+// just PostToolUse). Without the fix, post would be nil and the response would
+// carry an incomplete detail instead of the failure information.
+func TestAPIOperationDetail_PostToolUseFailure(t *testing.T) {
+	srv := newTestServer(t,
+		&event.Event{SessionID: "s1", HookEvent: "PreToolUse", ToolName: "Bash",
+			Raw: []byte(`{"tool_use_id":"b","tool_input":{"command":"exit 1"}}`)},
+		&event.Event{SessionID: "s1", HookEvent: "PostToolUseFailure", ToolName: "Bash",
+			Raw: []byte(`{"tool_use_id":"b","tool_response":{"exit_code":1,"stderr":"command not found"}}`)},
+	)
+	req := httptest.NewRequest(http.MethodGet, "/api/sessions/s1/operations/b", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d (body=%s)", rec.Code, rec.Body.String())
+	}
+	// raw_post is only set when BuildOperationDetail receives a non-nil post
+	// event. Before the fix, the PostToolUseFailure case was missing from the
+	// switch, so post remained nil and raw_post was absent.
+	var d struct {
+		RawPost json.RawMessage `json:"raw_post"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, rec.Body.String())
+	}
+	if len(d.RawPost) == 0 {
+		t.Fatalf("raw_post absent: PostToolUseFailure was not matched as the post event (body=%s)", rec.Body.String())
+	}
+}
+
 func TestAPIStillRoutesUnderRootMount(t *testing.T) {
 	srv := newTestServer(t, &event.Event{SessionID: "s1", HookEvent: "SessionStart", Raw: []byte(`{}`)})
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
