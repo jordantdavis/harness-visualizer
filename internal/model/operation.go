@@ -38,7 +38,7 @@ func BuildOperations(events []*event.Event) []Operation {
 	var posts []slot
 
 	for _, e := range events {
-		if e.HookEvent != "PostToolUse" {
+		if e.HookEvent != "PostToolUse" && e.HookEvent != "PostToolUseFailure" {
 			continue
 		}
 		idx := len(posts)

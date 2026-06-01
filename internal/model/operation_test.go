@@ -86,3 +86,33 @@ func TestBuildOperations_DefaultKindIsTool(t *testing.T) {
 		t.Fatalf("Kind = %q, want \"tool\"", ops[0].Kind)
 	}
 }
+
+func TestBuildOperations_PairsToolUseWithFailurePost(t *testing.T) {
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreToolUse", "Bash", `{"tool_use_id":"f1","tool_input":{"command":"false"}}`, t0),
+		ev(2, "PostToolUseFailure", "Bash", `{"tool_use_id":"f1","error":"boom"}`, t0.Add(50*time.Millisecond)),
+	})
+	if len(ops) != 1 {
+		t.Fatalf("got %d ops, want 1", len(ops))
+	}
+	op := ops[0]
+	if op.Kind != "tool" || op.Status != StatusError {
+		t.Fatalf("kind=%q status=%q, want tool/error", op.Kind, op.Status)
+	}
+	if op.Duration != 50*time.Millisecond {
+		t.Fatalf("duration = %v, want 50ms", op.Duration)
+	}
+}
+
+func TestBuildOperations_HeuristicFailurePost(t *testing.T) {
+	// No tool_use_id on either; heuristic still pairs same-tool PostToolUseFailure.
+	t0 := time.Unix(1000, 0)
+	ops := BuildOperations([]*event.Event{
+		ev(1, "PreToolUse", "Read", `{"tool_input":{"file_path":"x"}}`, t0),
+		ev(2, "PostToolUseFailure", "Read", `{"error":"nope"}`, t0.Add(time.Second)),
+	})
+	if len(ops) != 1 || ops[0].Status != StatusError {
+		t.Fatalf("want one error op, got %+v", ops)
+	}
+}
