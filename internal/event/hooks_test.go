@@ -10,7 +10,6 @@ func TestHooksRegistryAllNamesPresent(t *testing.T) {
 		"CwdChanged",
 		"TaskCreated", "TaskCompleted",
 		"UserPromptExpansion",
-		"MessageDisplay",
 		"WorktreeRemove",
 		"StopFailure",
 	}
@@ -33,7 +32,7 @@ func TestHooksRegistryEntriesComplete(t *testing.T) {
 	validLane := map[Lane]bool{
 		LanePermission: true, LaneInstructions: true, LaneConfig: true,
 		LaneCwd: true, LaneTask: true, LaneExpansion: true,
-		LaneMessage: true, LaneWorktree: true, LaneStopFailure: true,
+		LaneWorktree: true, LaneStopFailure: true,
 	}
 	for _, h := range Hooks {
 		if h.Glyph == "" {

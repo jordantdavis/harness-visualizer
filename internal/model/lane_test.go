@@ -57,11 +57,6 @@ func TestGistExtractors(t *testing.T) {
 			`{"expanded":"hello world"}`, "hello world"},
 		{"expansion missing", "UserPromptExpansion", `{}`, ""},
 
-		{"message display", "MessageDisplay",
-			`{"text":"Hello, how can I help?"}`,
-			"Hello, how can I help?"},
-		{"message missing", "MessageDisplay", `{}`, ""},
-
 		{"worktree remove", "WorktreeRemove",
 			`{"name":"feature-x","path":"/w/feature-x"}`,
 			"removed: feature-x"},
@@ -94,8 +89,8 @@ func TestBuildLaneEvents(t *testing.T) {
 			Raw: json.RawMessage(`{"tool_name":"Bash"}`)},
 		{ID: "b", HookEvent: "PermissionRequest", CapturedAt: t0.Add(time.Second), Seq: 2,
 			Raw: json.RawMessage(`{"tool_name":"Bash","tool_input":{"command":"ls"}}`)},
-		{ID: "c", HookEvent: "MessageDisplay", CapturedAt: t0.Add(2 * time.Second), Seq: 3,
-			Raw: json.RawMessage(`{"text":"hi"}`)},
+		{ID: "c", HookEvent: "CwdChanged", CapturedAt: t0.Add(2 * time.Second), Seq: 3,
+			Raw: json.RawMessage(`{"new_cwd":"/foo"}`)},
 	}
 
 	got := BuildLaneEvents(events)

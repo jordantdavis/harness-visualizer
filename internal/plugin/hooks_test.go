@@ -36,11 +36,10 @@ var goldenHooks = []string{
 	"TaskCompleted",
 	"TaskCreated",
 	"UserPromptExpansion",
-	// Tier 2 additions (5)
+	// Tier 2 additions (4 — MessageDisplay omitted: not a real Claude Code hook event)
 	"ConfigChange",
 	"CwdChanged",
 	"InstructionsLoaded",
-	"MessageDisplay",
 	"WorktreeRemove",
 	// Tier 3 additions (6)
 	"Elicitation",

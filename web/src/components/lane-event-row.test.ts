@@ -10,7 +10,6 @@ describe('hv-lane-event-row', () => {
       ok: true,
       json: async () => [
         { name: 'PermissionRequest', glyph: '🔒', label: 'Permission', lane: 'permission', severity: 'warn' },
-        { name: 'MessageDisplay', glyph: '💬', label: 'Message', lane: 'message', severity: 'dim' },
       ],
     }))
     await loadHooks()
@@ -47,9 +46,11 @@ describe('hv-lane-event-row', () => {
   })
 
   it('applies dim class for severity=dim', async () => {
+    // Severity comes from the event itself; the CSS rule only needs the
+    // sev-dim class on the row. Hook name need not be a real registry entry.
     const el = document.createElement('hv-lane-event-row') as any
     el.event = {
-      id: 'e3', hook_event: 'MessageDisplay', lane: 'message',
+      id: 'e3', hook_event: 'FakeDimHook', lane: 'unknown',
       gist: 'hello', severity: 'dim', at: '2026-06-01T12:00:00Z', seq: 3,
     }
     document.body.appendChild(el)

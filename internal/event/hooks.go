@@ -15,7 +15,6 @@ const (
 	LaneCwd          Lane = "cwd"
 	LaneTask         Lane = "task"
 	LaneExpansion    Lane = "expansion"
-	LaneMessage      Lane = "message"
 	LaneWorktree     Lane = "worktree"
 	LaneStopFailure  Lane = "stop_failure"
 )
@@ -39,7 +38,6 @@ var Hooks = []HookMeta{
 	{"TaskCreated", "☐", "TaskCreate", LaneTask, "info"},
 	{"TaskCompleted", "☑", "TaskDone", LaneTask, "info"},
 	{"UserPromptExpansion", "🪄", "Expansion", LaneExpansion, "info"},
-	{"MessageDisplay", "💬", "Message", LaneMessage, "dim"},
 	{"WorktreeRemove", "🪵", "WorktreeRm", LaneWorktree, "info"},
 	{"StopFailure", "⚠", "StopFailure", LaneStopFailure, "error"},
 }

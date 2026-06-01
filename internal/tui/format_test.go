@@ -270,7 +270,6 @@ func TestDeriveStatusLaneEvents(t *testing.T) {
 		{"PermissionDenied", statusError},
 		{"InstructionsLoaded", statusNeutral},
 		{"StopFailure", statusError},
-		{"MessageDisplay", statusNeutral},
 		{"UnknownNewHook", statusNeutral},
 	}
 	for _, tc := range cases {
@@ -307,11 +306,11 @@ func TestTargetGistLaneEvents(t *testing.T) {
 	}
 }
 
-func TestIsLifecycleHookIncludesMessageDisplay(t *testing.T) {
-	if !isLifecycleHook("MessageDisplay") {
-		t.Error("MessageDisplay should be lifecycle (dim)")
-	}
+func TestIsLifecycleHookExcludesLaneEvents(t *testing.T) {
 	if isLifecycleHook("PermissionRequest") {
 		t.Error("PermissionRequest should NOT be lifecycle (gets warn glyph)")
+	}
+	if isLifecycleHook("CwdChanged") {
+		t.Error("CwdChanged should NOT be lifecycle (renders in lane)")
 	}
 }

@@ -59,8 +59,6 @@ func laneGist(ev *event.Event) string {
 		return gistTask(ev.Raw, "Done")
 	case "UserPromptExpansion":
 		return gistExpansion(ev.Raw)
-	case "MessageDisplay":
-		return gistMessage(ev.Raw)
 	case "WorktreeRemove":
 		return gistWorktree(ev.Raw)
 	case "StopFailure":
@@ -157,16 +155,6 @@ func gistExpansion(raw json.RawMessage) string {
 		return f.Original + " → " + f.Expanded
 	}
 	return f.Expanded
-}
-
-func gistMessage(raw json.RawMessage) string {
-	var f struct {
-		Text string `json:"text"`
-	}
-	if json.Unmarshal(raw, &f) != nil {
-		return ""
-	}
-	return f.Text
 }
 
 func gistWorktree(raw json.RawMessage) string {
