@@ -4,7 +4,7 @@ import type { DiffOp } from '../api/types'
 
 const SIGN: Record<string, string> = { del: '-', add: '+', context: ' ' }
 
-@customElement('cchv-diff-view')
+@customElement('hv-diff-view')
 export class DiffView extends LitElement {
   @property({ attribute: false }) diff: DiffOp[] = []
 
@@ -32,6 +32,6 @@ export class DiffView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-diff-view': DiffView
+    'hv-diff-view': DiffView
   }
 }

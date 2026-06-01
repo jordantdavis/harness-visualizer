@@ -1,4 +1,4 @@
-// Package serve implements `cchv serve`: ensure the daemon is running, then
+// Package serve implements `hv serve`: ensure the daemon is running, then
 // open the system browser at the daemon's embedded web UI. It is a thin
 // launcher, not a second server — the daemon already serves the UI at /.
 package serve
@@ -10,10 +10,10 @@ import (
 	"os/exec"
 	"runtime"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/client"
+	"jordandavis.dev/harness-visualizer/internal/client"
 )
 
-// Run is the CLI entrypoint for `cchv serve`. args is currently unused.
+// Run is the CLI entrypoint for `hv serve`. args is currently unused.
 func Run(args []string) int {
 	_ = args
 	return run(client.EnsureDaemon, openBrowser, os.Stdout)
@@ -29,7 +29,7 @@ func run(ensure func() (string, error), open func(string) error, out io.Writer) 
 		return 1
 	}
 	url := "http://" + addr + "/"
-	fmt.Fprintf(out, "cchv serve: %s\n", url)
+	fmt.Fprintf(out, "hv serve: %s\n", url)
 	if err := open(url); err != nil {
 		fmt.Fprintln(os.Stderr, "serve: open browser: "+err.Error())
 	}

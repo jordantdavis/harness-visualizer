@@ -1,4 +1,4 @@
-// Package tui implements the cchv terminal user interface.
+// Package tui implements the hv terminal user interface.
 package tui
 
 // Layout describes which responsive variant to render.

@@ -8,7 +8,7 @@ import './session-list'
 import './timeline'
 import './inspector'
 
-@customElement('cchv-app')
+@customElement('hv-app')
 export class App extends LitElement {
   @state() private sessions: SessionInfo[] = []
   @state() private selectedSessionId = ''
@@ -115,30 +115,30 @@ export class App extends LitElement {
 
   render() {
     return html`
-      <cchv-top-bar .live=${this.live} .daemonOk=${this.daemonOk}></cchv-top-bar>
+      <hv-top-bar .live=${this.live} .daemonOk=${this.daemonOk}></hv-top-bar>
       <div class="panes">
         <div class="pane">
           <div class="ptitle">sessions</div>
           <div class="body">
-            <cchv-session-list
+            <hv-session-list
               .sessions=${this.sessions}
               .selectedId=${this.selectedSessionId}
-            ></cchv-session-list>
+            ></hv-session-list>
           </div>
         </div>
         <div class="pane">
           <div class="ptitle">timeline</div>
           <div class="body">
-            <cchv-timeline
+            <hv-timeline
               .items=${this.items}
               .selectedOpId=${this.selectedOpId}
-            ></cchv-timeline>
+            ></hv-timeline>
           </div>
         </div>
         <div class="pane">
           <div class="ptitle">inspector</div>
           <div class="body">
-            <cchv-inspector .detail=${this.detail}></cchv-inspector>
+            <hv-inspector .detail=${this.detail}></hv-inspector>
           </div>
         </div>
       </div>
@@ -148,6 +148,6 @@ export class App extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-app': App
+    'hv-app': App
   }
 }

@@ -26,16 +26,16 @@ Written in Go. Synthesized from architecture, product, and UX review (2026-05-28
 
 ### One binary, three roles
 
-`cchv` with subcommands (simplest install — the plugin manifest references one path):
+`hv` with subcommands (simplest install — the plugin manifest references one path):
 
-- `cchv hook` — hook forwarder (also the bare/default invocation)
-- `cchv daemon` — long-running HTTP server (`--foreground` for debugging)
-- `cchv tui` — bubbletea UI
+- `hv hook` — hook forwarder (also the bare/default invocation)
+- `hv daemon` — long-running HTTP server (`--foreground` for debugging)
+- `hv tui` — bubbletea UI
 
 ### Package layout
 
 ```
-cmd/cchv/main.go            # subcommand dispatch
+cmd/hv/main.go            # subcommand dispatch
 internal/event/             # canonical Event type — the shared contract
 internal/client/            # hook-side: read stdin, enrich, POST, fail-safe
 internal/daemon/            # HTTP server + in-memory hub (SSE fan-out)
@@ -47,7 +47,7 @@ plugin/                     # Claude Code plugin manifest (static hooks config)
 
 ### Data flow
 
-- **Live:** hook → `cchv hook` (stdin) → `POST /events` → daemon returns `204`
+- **Live:** hook → `hv hook` (stdin) → `POST /events` → daemon returns `204`
   immediately after accepting bytes → fans out to (a) per-session JSONL writer,
   (b) in-memory hub → **SSE** stream to TUI.
 - **Historical:** TUI → `GET /sessions` (list) and `GET /sessions/{id}/events` (read).
@@ -90,14 +90,14 @@ type Event struct {
 
 ### Daemon lifecycle & storage
 
-- **Auto-spawned by the CLI** on connection-refused: fork `cchv daemon` fully detached
+- **Auto-spawned by the CLI** on connection-refused: fork `hv daemon` fully detached
   (`Setsid`, logs to file), do **not** wait, drop the current event, exit 0. Next hook
-  (ms later) hits the running daemon. Manual `cchv daemon` is the override / dev path.
+  (ms later) hits the running daemon. Manual `hv daemon` is the override / dev path.
 - **Single instance** via port bind (the bind is the mutex) + pidfile. **Default port
   7842; on conflict fall back to an ephemeral port and write the actual port to a port
   file** that the CLI and TUI read.
-- **Storage:** `$XDG_DATA_HOME/cchv/sessions/{session_id}.jsonl` (with OS fallbacks).
-  Runtime files (port, pid, daemon log) under `$XDG_RUNTIME_DIR/cchv/` or data-dir fallback.
+- **Storage:** `$XDG_DATA_HOME/hv/sessions/{session_id}.jsonl` (with OS fallbacks).
+  Runtime files (port, pid, daemon log) under `$XDG_RUNTIME_DIR/hv/` or data-dir fallback.
 - **Concurrency:** daemon is the only writer. `POST` handler → buffered channel →
   one writer goroutine per session. Buffered writes; periodic flush (~250ms) and flush
   on `Stop`/`SessionEnd`. Close idle session file handles after N minutes. No file locking.
@@ -105,7 +105,7 @@ type Event struct {
 ### CLI critical-path safety (load-bearing)
 
 **Hooks are async / non-blocking.** Claude Code must never wait on the visualizer. The
-`cchv hook` process does the minimum synchronously, returns immediately, and never gates
+`hv hook` process does the minimum synchronously, returns immediately, and never gates
 the agent on forwarding completion. The budget below is a hard ceiling, not a target —
 the goal is "imperceptible," and the daemon (not the hook) is the buffer.
 
@@ -219,7 +219,7 @@ daemon-as-buffer design):
       `-race`), listing/reads, seq-resume, malformed-line resilience.
 
 ### Phase 2 — Daemon ✅
-- [x] `cchv daemon` command (+ `--foreground`).
+- [x] `hv daemon` command (+ `--foreground`).
 - [x] Bind `127.0.0.1`, single-instance via port bind + pidfile; write actual port to port file.
 - [x] 5 HTTP routes; `POST /events` accepts bytes → buffered channel → returns `204` fast.
 - [x] Writer goroutine per session; in-memory hub for SSE fan-out (`GET /stream`).
@@ -228,25 +228,25 @@ daemon-as-buffer design):
 - [x] Tests: route behavior, ordering under burst, SSE fan-out to multiple subscribers.
 
 ### Phase 3 — Hook CLI ✅
-- [x] `cchv hook` (bare/default invocation): bounded stdin read, defensive enrich
+- [x] `hv hook` (bare/default invocation): bounded stdin read, defensive enrich
       (timestamp, ID, host, pid, promoted fields), `POST` under the ~100ms / 50ms budget.
 - [x] Always exit 0; top-level panic recovery; nothing on stdout; silent stderr (debug env opt-in).
 - [x] Detached daemon auto-spawn on connection-refused (no wait, drop current event).
 - [x] Tests: malformed/huge stdin, daemon-down path, timeout path, exit code always 0.
 
 ### Phase 4 — Plugin manifest
-- [x] `plugin/`: Claude Code plugin registering `cchv hook` for ALL 9 hook events
+- [x] `plugin/`: Claude Code plugin registering `hv hook` for ALL 9 hook events
       (`plugin/.claude-plugin/plugin.json` + `plugin/hooks/hooks.json`, `async:true`,
-      `"${CLAUDE_PLUGIN_ROOT}/bin/cchv" hook`). Repo-root `.claude-plugin/marketplace.json`
+      `"${CLAUDE_PLUGIN_ROOT}/bin/hv" hook`). Repo-root `.claude-plugin/marketplace.json`
       makes it discoverable via `claude plugin marketplace add`. Passes `claude plugin validate`.
 - [x] Install/uninstall docs (one command path) — `README.md` Install/Uninstall sections.
 - [x] Smoke test: `scripts/smoke.sh` exercises the capture path end-to-end at the plumbing
-      level (hook → daemon auto-spawn → JSONL) in an isolated `CCHV_DATA_DIR` — **passing**.
+      level (hook → daemon auto-spawn → JSONL) in an isolated `HV_DATA_DIR` — **passing**.
       Remaining MANUAL step (documented in smoke.sh + README, **not yet run**): install plugin
       into a real Claude Code session and confirm live events land.
 
 ### Phase 5 — TUI skeleton (history-fed) ✅
-- [x] `cchv tui`: master-detail layout, responsive collapse (120/80/<80), focus model.
+- [x] `hv tui`: master-detail layout, responsive collapse (120/80/<80), focus model.
 - [x] Top status bar + bottom context-sensitive keyhint bar; `?` help overlay.
 - [x] Event row hierarchy (§ Event row); `NO_COLOR`/dumb-term render path designed first.
 - [x] Sessions list via `GET /sessions`; events via `GET /sessions/{id}/events`.

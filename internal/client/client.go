@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/paths"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/paths"
 )
 
 const (
@@ -31,16 +31,16 @@ const (
 	defaultPort = 7842
 )
 
-// debug logs only when CCHV_DEBUG is non-empty.
-var debug = log.New(io.Discard, "[cchv] ", log.LstdFlags)
+// debug logs only when HV_DEBUG is non-empty.
+var debug = log.New(io.Discard, "[hv] ", log.LstdFlags)
 
 func init() {
-	if os.Getenv("CCHV_DEBUG") != "" {
+	if os.Getenv("HV_DEBUG") != "" {
 		debug.SetOutput(os.Stderr)
 	}
 }
 
-// Run is the exported entrypoint for `cchv hook` (and the bare default
+// Run is the exported entrypoint for `hv hook` (and the bare default
 // invocation). It wires real stdin, stdout, the port-file-resolved daemon
 // address, and the real daemon auto-spawn function, then delegates to run.
 // It always returns 0 — a panic in run is caught here before it can surface
@@ -169,7 +169,7 @@ func isConnRefused(err error) bool {
 	return false
 }
 
-// spawnDaemon forks `cchv daemon` fully detached: new session (Setsid),
+// spawnDaemon forks `hv daemon` fully detached: new session (Setsid),
 // stdout/stderr redirected to the runtime-dir daemon log, no Wait.
 // The current event is dropped; the next hook invocation (ms later) will
 // find the daemon running.
@@ -225,7 +225,7 @@ func daemonLogPath() string {
 
 // EnsureDaemon returns the daemon's "host:port", spawning the daemon if it is
 // not already reachable. It blocks up to ~3s for a freshly-spawned daemon to
-// write its port file and answer /healthz. Used by `cchv serve`.
+// write its port file and answer /healthz. Used by `hv serve`.
 func EnsureDaemon() (string, error) {
 	addr := resolveAddr()
 	if daemonHealthy(addr) {

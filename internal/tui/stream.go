@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // StreamEvent is one item delivered over the live SSE stream. Exactly one of

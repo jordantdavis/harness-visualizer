@@ -6,7 +6,7 @@
 
 ## Summary
 
-Pivot the Claude Code Harness Visualizer (`cchv`) from its terminal TUI to a
+Pivot the Claude Code Harness Visualizer (`hv`) from its terminal TUI to a
 web-based UI built with [Lit](https://lit.dev/), served from the existing Go
 binary. The web app is a **dumb client**: all operation/diff/conversation
 derivation happens **server-side** in a new `internal/model` package (extracted
@@ -47,16 +47,16 @@ layers features on as fast-follows.
 One binary, unchanged shape. We extend the daemon; we do not add a process.
 
 ```
-cchv hook     (default)  forward hook payload                      [unchanged]
-cchv daemon              HTTP + SSE + now also serves the web app  [extended]
-cchv tui                 terminal viewer                           [unchanged, coexists]
-cchv serve               ensure daemon is up, open browser to UI   [new, thin launcher]
+hv hook     (default)  forward hook payload                      [unchanged]
+hv daemon              HTTP + SSE + now also serves the web app  [extended]
+hv tui                 terminal viewer                           [unchanged, coexists]
+hv serve               ensure daemon is up, open browser to UI   [new, thin launcher]
 ```
 
 - The daemon already binds `127.0.0.1`, owns the SSE hub, and reads the store.
 - Mount the embedded Lit bundle at `/`; keep data routes under `/api/`; leave
   `/stream`, `/events`, `/healthz` as-is.
-- `cchv serve` is a ~40-line launcher: ensure the daemon is running (reuse the
+- `hv serve` is a ~40-line launcher: ensure the daemon is running (reuse the
   hook CLI's detach logic in `internal/client`), read the port file, open the
   browser at `http://127.0.0.1:<port>/`. It is a launcher, not a second server.
 - TUI and web are peer clients of the same API. No flag-day cutover; the TUI is
@@ -180,16 +180,16 @@ Notes:
 ## E. Lit component tree (v1 — mouse-first)
 
 ```
-<cchv-app>                 router + stores (no keyboard controller yet)
-├─ <cchv-top-bar>          daemon status · live indicator · error count
-├─ <cchv-session-list>     left pane — GET /api/sessions, live dots
-├─ <cchv-timeline>         center pane — unified TimelineItem stream
-│  ├─ <cchv-op-row>          tool operation (glyph · tool · target · status · dur)
-│  └─ <cchv-turn-row>        conversation turn (you / assistant prose)
-└─ <cchv-inspector>        right pane — selected operation detail
-   ├─ <cchv-diff-view>       syntax-highlighted line diff (Edit/Write)
-   ├─ <cchv-code-view>       Read/Bash output
-   └─ <cchv-raw-view>        pretty-printed raw JSON (escape hatch)
+<hv-app>                 router + stores (no keyboard controller yet)
+├─ <hv-top-bar>          daemon status · live indicator · error count
+├─ <hv-session-list>     left pane — GET /api/sessions, live dots
+├─ <hv-timeline>         center pane — unified TimelineItem stream
+│  ├─ <hv-op-row>          tool operation (glyph · tool · target · status · dur)
+│  └─ <hv-turn-row>        conversation turn (you / assistant prose)
+└─ <hv-inspector>        right pane — selected operation detail
+   ├─ <hv-diff-view>       syntax-highlighted line diff (Edit/Write)
+   ├─ <hv-code-view>       Read/Bash output
+   └─ <hv-raw-view>        pretty-printed raw JSON (escape hatch)
 ```
 
 State lives in a few lightweight reactive stores (not a heavy framework):
@@ -225,7 +225,7 @@ internal/web/embed.go    //go:embed dist  (+ a //go:build dev stub serving empty
   it).
 - Commit `web/dist/.gitkeep` (or use the `dev` build-tag stub) so a fresh
   checkout `go build`s before anyone runs npm.
-- **Dev:** `vite dev` (HMR, e.g. `:5173`) + `cchv daemon --foreground`. Vite
+- **Dev:** `vite dev` (HMR, e.g. `:5173`) + `hv daemon --foreground`. Vite
   **proxies** `/api` and `/stream` to the daemon → browser stays same-origin →
   **no CORS** anywhere.
 - **Prod:** `go build` ships one self-contained binary, zero runtime deps.
@@ -240,7 +240,7 @@ internal/web/embed.go    //go:embed dist  (+ a //go:build dev stub serving empty
 - Live interleaved timeline (operations + conversation transcript)
 - Inspector with: real syntax-highlighted diff (Edit/Write), Read/Bash output,
   raw JSON escape hatch
-- `cchv serve` launcher
+- `hv serve` launcher
 - Embedded production build (`go build` → self-contained binary)
 - Mouse/click-driven interaction
 
@@ -252,11 +252,11 @@ internal/web/embed.go    //go:embed dist  (+ a //go:build dev stub serving empty
 - Error-minimap on the scrollbar, deep links, command palette
 - Model B streaming (server-pushed derived deltas)
 - Full E2E test suite
-- **Stale-daemon version skew** (surfaced during Plan 2): `cchv serve` /
+- **Stale-daemon version skew** (surfaced during Plan 2): `hv serve` /
   `EnsureDaemon` reuse *any* daemon that answers `/healthz`, with no version
   check — so a daemon from an older binary squatting the port is silently reused
   and serves stale (or missing) routes. Add a build/version field to `/healthz`
-  and have `cchv serve` detect a mismatch and warn or restart the daemon.
+  and have `hv serve` detect a mismatch and warn or restart the daemon.
 - **`/timeline?after=` seq-cursor pagination** (surfaced during Plan 2): the
   client already sends `?after={lastSeq}`, but `handleAPITimeline` ignores it and
   always returns the full timeline (v1 full-refetch by design). Wire the cursor
@@ -295,7 +295,7 @@ internal/web/embed.go    //go:embed dist  (+ a //go:build dev stub serving empty
    `HTTPClient` at `/api/`.
 4. Scaffold `web/` (Lit + Vite, dev proxy); render session list + timeline +
    inspector against the live API. No embedding yet.
-5. Add `internal/web` embed + SPA handler; add `cchv serve`; wire `make build`.
+5. Add `internal/web` embed + SPA handler; add `hv serve`; wire `make build`.
 6. Reach parity over time via fast-follows; retire the TUI only then.
 
 ## Open questions (non-blocking)

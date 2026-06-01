@@ -2,13 +2,13 @@
 
 ## Status
 
-**COMPLETE & browser-verified (2026-05-31).** All 12 tasks implemented via subagent-driven TDD on branch `feat/web-ui-frontend`, each gated by spec + code-quality review. `go build ./...`, `go vet ./...`, and `go test ./...` (all 10 packages) are green; `cd web && npm run build` (tsc + vite) is clean and `npm run test` passes (vitest, 8 tests). A live end-to-end check via the chrome-devtools MCP drove the **embedded production binary**: the three-pane UI rendered, the session list → timeline (✔/▶ glyphs) → inspector flow worked, the server-derived structured diff and Bash output/raw views rendered correctly, and the console was clean. `cchv serve` was verified to reuse an already-healthy daemon (no duplicate spawn) and dispatch the browser opener. A final whole-branch review found no Critical/Important issues; two minor follow-ups were applied (empty-`id` op guard; `postbuild` keeps a bare `npm run build` tree-clean). One deferred-by-design note: the `/timeline?after=` cursor is sent by the client but not yet applied server-side (full-refetch v1; seq-cursor pagination is a tracked fast-follow).
+**COMPLETE & browser-verified (2026-05-31).** All 12 tasks implemented via subagent-driven TDD on branch `feat/web-ui-frontend`, each gated by spec + code-quality review. `go build ./...`, `go vet ./...`, and `go test ./...` (all 10 packages) are green; `cd web && npm run build` (tsc + vite) is clean and `npm run test` passes (vitest, 8 tests). A live end-to-end check via the chrome-devtools MCP drove the **embedded production binary**: the three-pane UI rendered, the session list → timeline (✔/▶ glyphs) → inspector flow worked, the server-derived structured diff and Bash output/raw views rendered correctly, and the console was clean. `hv serve` was verified to reuse an already-healthy daemon (no duplicate spawn) and dispatch the browser opener. A final whole-branch review found no Critical/Important issues; two minor follow-ups were applied (empty-`id` op guard; `postbuild` keeps a bare `npm run build` tree-clean). One deferred-by-design note: the `/timeline?after=` cursor is sent by the client but not yet applied server-side (full-refetch v1; seq-cursor pagination is a tracked fast-follow).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Lit + Vite web UI (a dumb client of Plan 1's `/api`), embed the production bundle into the `cchv` binary, and add a `cchv serve` launcher — so a user can `make build && cchv serve` and see the three-pane Sessions │ Timeline │ Inspector view live.
+**Goal:** Build the Lit + Vite web UI (a dumb client of Plan 1's `/api`), embed the production bundle into the `hv` binary, and add a `hv serve` launcher — so a user can `make build && hv serve` and see the three-pane Sessions │ Timeline │ Inspector view live.
 
-**Architecture:** The browser never derives. It fetches server-derived `TimelineItem`/`OperationDetail` JSON from Plan 1's `/api`, subscribes to `/stream` SSE as a *nudge* (debounced refetch), and renders terminal-native Lit components. A controller component (`cchv-app`) owns all state; children are presentational and emit `CustomEvent`s. The Vite dev server proxies `/api` + `/stream` to the daemon (same-origin → no CORS). For production, Vite builds into `internal/web/dist`, which is `go:embed`'d and served at `/` by the daemon with SPA fallback. `cchv serve` ensures the daemon is up (reusing `internal/client`'s detach logic) and opens the browser.
+**Architecture:** The browser never derives. It fetches server-derived `TimelineItem`/`OperationDetail` JSON from Plan 1's `/api`, subscribes to `/stream` SSE as a *nudge* (debounced refetch), and renders terminal-native Lit components. A controller component (`hv-app`) owns all state; children are presentational and emit `CustomEvent`s. The Vite dev server proxies `/api` + `/stream` to the daemon (same-origin → no CORS). For production, Vite builds into `internal/web/dist`, which is `go:embed`'d and served at `/` by the daemon with SPA fallback. `hv serve` ensures the daemon is up (reusing `internal/client`'s detach logic) and opens the browser.
 
 **Tech Stack:** Lit 3 + TypeScript 5 + Vite 6, Vitest + happy-dom for tests. Go stdlib `embed`/`net/http`/`os/exec` for embed + launcher. No new Go dependencies.
 
@@ -21,7 +21,7 @@
 ## Scope & sequencing notes (read first)
 
 - **This is Plan 2 of 2.** Plan 1 = backend (`internal/model`, `internal/source/claudecode`, `/api`) — complete on `main`. Plan 2 = frontend + embed + launcher (this document).
-- **Thin vertical slice (spec §G).** In v1: session list, live interleaved timeline, inspector (real diff for Edit/Write, Bash/Read output, raw-JSON escape hatch), `cchv serve`, embedded prod build, mouse-driven. **Explicitly NOT in v1:** keyboard nav, filter/error-hop/folding, light theme, virtualization, syntax-highlighting grammars, Model B streaming, full E2E suite.
+- **Thin vertical slice (spec §G).** In v1: session list, live interleaved timeline, inspector (real diff for Edit/Write, Bash/Read output, raw-JSON escape hatch), `hv serve`, embedded prod build, mouse-driven. **Explicitly NOT in v1:** keyboard nav, filter/error-hop/folding, light theme, virtualization, syntax-highlighting grammars, Model B streaming, full E2E suite.
 - **`go:embed` package lives at `internal/web/`** (not `web/`) so the embed pattern `all:dist` resolves to `internal/web/dist` without an illegal `../`. Vite's `outDir` is `../internal/web/dist`. Frontend *source* stays in `web/`.
 - **Full-timeline replace, not incremental upsert (v1).** Plan 1's `/timeline` returns the whole session (correct pairing needs whole-history context). The client refetches the full timeline on each SSE nudge and replaces its list. "Upsert by `Operation.ID`" becomes relevant only when seq-cursor pagination lands (a fast-follow); doing a full replace now is correct and simpler (YAGNI).
 - **`time.Duration` is nanoseconds on the wire.** Go marshals `Operation.Duration` as an int64 nanosecond count. The client converts to ms/s for display.
@@ -34,28 +34,28 @@
 | `web/package-lock.json` | committed lockfile (so `npm ci` + a clean Makefile build are reproducible) |
 | `web/tsconfig.json` | TS config tuned for Lit (`experimentalDecorators`, `useDefineForClassFields:false`) |
 | `web/vite.config.ts` | dev proxy (`/api`,`/stream` → daemon), `build.outDir=../internal/web/dist`, vitest config |
-| `web/index.html` | SPA entry: `<cchv-app>` + module script |
+| `web/index.html` | SPA entry: `<hv-app>` + module script |
 | `web/src/global.css` | terminal palette CSS custom properties on `:root` + base body styles |
-| `web/src/main.ts` | bootstrap: import global.css + register `cchv-app` |
+| `web/src/main.ts` | bootstrap: import global.css + register `hv-app` |
 | `web/src/api/types.ts` | TS mirrors of the Go wire types (SessionInfo, Operation, Turn, TimelineItem, OperationDetail, DiffOp) |
 | `web/src/api/client.ts` | `api.sessions/timeline/operation` fetch helpers |
 | `web/src/api/stream.ts` | `debounce` + `StreamController` (EventSource nudge wrapper) |
-| `web/src/components/op-row.ts` | `<cchv-op-row>` — one tool operation row |
-| `web/src/components/turn-row.ts` | `<cchv-turn-row>` — one conversation turn row |
-| `web/src/components/diff-view.ts` | `<cchv-diff-view>` — structured line diff |
-| `web/src/components/code-view.ts` | `<cchv-code-view>` — Bash/Read command + output |
-| `web/src/components/raw-view.ts` | `<cchv-raw-view>` — pretty-printed raw JSON escape hatch |
-| `web/src/components/inspector.ts` | `<cchv-inspector>` — picks a subview from `OperationDetail` |
-| `web/src/components/session-list.ts` | `<cchv-session-list>` — left pane |
-| `web/src/components/timeline.ts` | `<cchv-timeline>` — center pane (op + turn rows) |
-| `web/src/components/top-bar.ts` | `<cchv-top-bar>` — daemon status / live indicator |
-| `web/src/components/app.ts` | `<cchv-app>` — controller: state, fetches, stream, layout |
+| `web/src/components/op-row.ts` | `<hv-op-row>` — one tool operation row |
+| `web/src/components/turn-row.ts` | `<hv-turn-row>` — one conversation turn row |
+| `web/src/components/diff-view.ts` | `<hv-diff-view>` — structured line diff |
+| `web/src/components/code-view.ts` | `<hv-code-view>` — Bash/Read command + output |
+| `web/src/components/raw-view.ts` | `<hv-raw-view>` — pretty-printed raw JSON escape hatch |
+| `web/src/components/inspector.ts` | `<hv-inspector>` — picks a subview from `OperationDetail` |
+| `web/src/components/session-list.ts` | `<hv-session-list>` — left pane |
+| `web/src/components/timeline.ts` | `<hv-timeline>` — center pane (op + turn rows) |
+| `web/src/components/top-bar.ts` | `<hv-top-bar>` — daemon status / live indicator |
+| `web/src/components/app.ts` | `<hv-app>` — controller: state, fetches, stream, layout |
 | `internal/web/embed.go` | `//go:embed all:dist` + `Handler()` + testable `NewHandler(fs.FS)` SPA handler |
 | `internal/web/dist/.gitkeep` | committed placeholder so a fresh checkout `go build`s before `make build` |
 | `internal/daemon/daemon.go` | mount `web.Handler()` at `/` in `NewServer` (modify) |
 | `internal/client/client.go` | add exported `EnsureDaemon()` (+ `daemonHealthy`) (modify) |
-| `internal/serve/serve.go` | `cchv serve` launcher: ensure daemon + open browser |
-| `cmd/cchv/main.go` | dispatch `serve` subcommand (modify) |
+| `internal/serve/serve.go` | `hv serve` launcher: ensure daemon + open browser |
+| `cmd/hv/main.go` | dispatch `serve` subcommand (modify) |
 | `Makefile` | `build: web go-build`; `web`, `test`, `test-web`, `clean` targets |
 | `.gitignore` | ignore `internal/web/dist/*` (keep `.gitkeep`) + `web/node_modules` (modify) |
 
@@ -73,7 +73,7 @@
 
 ```json
 {
-  "name": "cchv-web",
+  "name": "hv-web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -150,10 +150,10 @@ export default defineConfig({
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>cchv</title>
+    <title>hv</title>
   </head>
   <body>
-    <cchv-app></cchv-app>
+    <hv-app></hv-app>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
@@ -192,7 +192,7 @@ html, body {
   font-variant-ligatures: none;
 }
 
-cchv-app { display: block; height: 100vh; }
+hv-app { display: block; height: 100vh; }
 ```
 
 - [ ] **Step 6: Create `web/src/main.ts`** (temporary placeholder; replaced in Task 8)
@@ -203,10 +203,10 @@ import './global.css'
 // Placeholder bootstrap so the scaffold builds. Task 8 replaces this with the
 // real `import './components/app'`.
 customElements.define(
-  'cchv-app',
+  'hv-app',
   class extends HTMLElement {
     connectedCallback() {
-      this.textContent = 'cchv web — scaffold OK'
+      this.textContent = 'hv web — scaffold OK'
     }
   },
 )
@@ -511,9 +511,9 @@ import { describe, expect, it } from 'vitest'
 import './op-row'
 import type { OpRow } from './op-row'
 
-describe('cchv-op-row', () => {
+describe('hv-op-row', () => {
   it('renders tool, target, a success glyph, and a duration', async () => {
-    const el = document.createElement('cchv-op-row') as OpRow
+    const el = document.createElement('hv-op-row') as OpRow
     el.op = {
       id: 'a',
       tool: 'Edit',
@@ -554,7 +554,7 @@ const GLYPH: Record<string, string> = {
   neutral: '·',
 }
 
-@customElement('cchv-op-row')
+@customElement('hv-op-row')
 export class OpRow extends LitElement {
   @property({ attribute: false }) op!: Operation
   @property({ type: Boolean, reflect: true }) selected = false
@@ -604,7 +604,7 @@ export class OpRow extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-op-row': OpRow
+    'hv-op-row': OpRow
   }
 }
 ```
@@ -616,7 +616,7 @@ import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { Turn } from '../api/types'
 
-@customElement('cchv-turn-row')
+@customElement('hv-turn-row')
 export class TurnRow extends LitElement {
   @property({ attribute: false }) turn!: Turn
 
@@ -655,7 +655,7 @@ export class TurnRow extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-turn-row': TurnRow
+    'hv-turn-row': TurnRow
   }
 }
 ```
@@ -687,9 +687,9 @@ import { describe, expect, it } from 'vitest'
 import './diff-view'
 import type { DiffView } from './diff-view'
 
-describe('cchv-diff-view', () => {
+describe('hv-diff-view', () => {
   it('renders one del and one add line', async () => {
-    const el = document.createElement('cchv-diff-view') as DiffView
+    const el = document.createElement('hv-diff-view') as DiffView
     el.diff = [
       { kind: 'context', text: 'a' },
       { kind: 'del', text: 'b' },
@@ -720,7 +720,7 @@ import type { DiffOp } from '../api/types'
 
 const SIGN: Record<string, string> = { del: '-', add: '+', context: ' ' }
 
-@customElement('cchv-diff-view')
+@customElement('hv-diff-view')
 export class DiffView extends LitElement {
   @property({ attribute: false }) diff: DiffOp[] = []
 
@@ -748,7 +748,7 @@ export class DiffView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-diff-view': DiffView
+    'hv-diff-view': DiffView
   }
 }
 ```
@@ -759,7 +759,7 @@ declare global {
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-code-view')
+@customElement('hv-code-view')
 export class CodeView extends LitElement {
   @property() command = ''
   @property() output = ''
@@ -784,7 +784,7 @@ export class CodeView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-code-view': CodeView
+    'hv-code-view': CodeView
   }
 }
 ```
@@ -795,7 +795,7 @@ declare global {
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-raw-view')
+@customElement('hv-raw-view')
 export class RawView extends LitElement {
   @property({ attribute: false }) value: unknown
 
@@ -816,7 +816,7 @@ export class RawView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-raw-view': RawView
+    'hv-raw-view': RawView
   }
 }
 ```
@@ -851,7 +851,7 @@ import './diff-view'
 import './code-view'
 import './raw-view'
 
-@customElement('cchv-inspector')
+@customElement('hv-inspector')
 export class Inspector extends LitElement {
   @property({ attribute: false }) detail?: OperationDetail
 
@@ -878,24 +878,24 @@ export class Inspector extends LitElement {
     return html`
       <div class="hdr">${d.tool}${d.file_path ? ` · ${d.file_path}` : ''}</div>
       ${d.detail_kind === 'diff'
-        ? html`<cchv-diff-view .diff=${d.diff ?? []}></cchv-diff-view>`
+        ? html`<hv-diff-view .diff=${d.diff ?? []}></hv-diff-view>`
         : ''}
       ${d.detail_kind === 'output'
-        ? html`<cchv-code-view
+        ? html`<hv-code-view
             .command=${d.command ?? ''}
             .output=${d.output ?? ''}
             .exitCode=${d.exit_code}
-          ></cchv-code-view>`
+          ></hv-code-view>`
         : ''}
       <div class="section">raw</div>
-      <cchv-raw-view .value=${{ pre: d.raw_pre, post: d.raw_post }}></cchv-raw-view>
+      <hv-raw-view .value=${{ pre: d.raw_pre, post: d.raw_post }}></hv-raw-view>
     `
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-inspector': Inspector
+    'hv-inspector': Inspector
   }
 }
 ```
@@ -907,7 +907,7 @@ import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { SessionInfo } from '../api/types'
 
-@customElement('cchv-session-list')
+@customElement('hv-session-list')
 export class SessionList extends LitElement {
   @property({ attribute: false }) sessions: SessionInfo[] = []
   @property() selectedId = ''
@@ -954,7 +954,7 @@ export class SessionList extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-session-list': SessionList
+    'hv-session-list': SessionList
   }
 }
 ```
@@ -968,7 +968,7 @@ import type { TimelineItem } from '../api/types'
 import './op-row'
 import './turn-row'
 
-@customElement('cchv-timeline')
+@customElement('hv-timeline')
 export class Timeline extends LitElement {
   @property({ attribute: false }) items: TimelineItem[] = []
   @property() selectedOpId = ''
@@ -989,13 +989,13 @@ export class Timeline extends LitElement {
     return html`${this.items.map((it) => {
       if (it.kind === 'operation' && it.op) {
         const op = it.op
-        return html`<cchv-op-row
+        return html`<hv-op-row
           .op=${op}
           ?selected=${op.id === this.selectedOpId}
           @click=${() => this.pickOp(op.id)}
-        ></cchv-op-row>`
+        ></hv-op-row>`
       }
-      if (it.turn) return html`<cchv-turn-row .turn=${it.turn}></cchv-turn-row>`
+      if (it.turn) return html`<hv-turn-row .turn=${it.turn}></hv-turn-row>`
       return ''
     })}`
   }
@@ -1003,7 +1003,7 @@ export class Timeline extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-timeline': Timeline
+    'hv-timeline': Timeline
   }
 }
 ```
@@ -1014,7 +1014,7 @@ declare global {
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-top-bar')
+@customElement('hv-top-bar')
 export class TopBar extends LitElement {
   @property({ type: Boolean }) live = false
   @property({ type: Boolean }) daemonOk = false
@@ -1039,7 +1039,7 @@ export class TopBar extends LitElement {
 
   render() {
     return html`
-      <span class="name">cchv</span>
+      <span class="name">hv</span>
       <span class="${this.daemonOk ? 'ok' : 'bad'}"
         >${this.daemonOk ? '● daemon' : '○ daemon'}</span
       >
@@ -1050,7 +1050,7 @@ export class TopBar extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-top-bar': TopBar
+    'hv-top-bar': TopBar
   }
 }
 ```
@@ -1069,7 +1069,7 @@ git commit -m "feat(web): inspector, session-list, timeline, top-bar containers"
 
 ---
 
-### Task 7: `cchv-app` controller + bootstrap
+### Task 7: `hv-app` controller + bootstrap
 
 **Files:**
 - Create: `web/src/components/app.ts`
@@ -1083,7 +1083,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './app'
 import type { App } from './app'
 
-describe('cchv-app', () => {
+describe('hv-app', () => {
   beforeEach(() => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]', { status: 200 }))
     // happy-dom has no EventSource; provide a no-op stub.
@@ -1097,13 +1097,13 @@ describe('cchv-app', () => {
   })
 
   it('renders the three panes', async () => {
-    const el = document.createElement('cchv-app') as App
+    const el = document.createElement('hv-app') as App
     document.body.append(el)
     await el.updateComplete
     const root = el.shadowRoot!
-    expect(root.querySelector('cchv-session-list')).toBeTruthy()
-    expect(root.querySelector('cchv-timeline')).toBeTruthy()
-    expect(root.querySelector('cchv-inspector')).toBeTruthy()
+    expect(root.querySelector('hv-session-list')).toBeTruthy()
+    expect(root.querySelector('hv-timeline')).toBeTruthy()
+    expect(root.querySelector('hv-inspector')).toBeTruthy()
     el.remove()
   })
 })
@@ -1127,7 +1127,7 @@ import './session-list'
 import './timeline'
 import './inspector'
 
-@customElement('cchv-app')
+@customElement('hv-app')
 export class App extends LitElement {
   @state() private sessions: SessionInfo[] = []
   @state() private selectedSessionId = ''
@@ -1224,30 +1224,30 @@ export class App extends LitElement {
 
   render() {
     return html`
-      <cchv-top-bar .live=${this.live} .daemonOk=${this.daemonOk}></cchv-top-bar>
+      <hv-top-bar .live=${this.live} .daemonOk=${this.daemonOk}></hv-top-bar>
       <div class="panes">
         <div class="pane">
           <div class="ptitle">sessions</div>
           <div class="body">
-            <cchv-session-list
+            <hv-session-list
               .sessions=${this.sessions}
               .selectedId=${this.selectedSessionId}
-            ></cchv-session-list>
+            ></hv-session-list>
           </div>
         </div>
         <div class="pane">
           <div class="ptitle">timeline</div>
           <div class="body">
-            <cchv-timeline
+            <hv-timeline
               .items=${this.items}
               .selectedOpId=${this.selectedOpId}
-            ></cchv-timeline>
+            ></hv-timeline>
           </div>
         </div>
         <div class="pane">
           <div class="ptitle">inspector</div>
           <div class="body">
-            <cchv-inspector .detail=${this.detail}></cchv-inspector>
+            <hv-inspector .detail=${this.detail}></hv-inspector>
           </div>
         </div>
       </div>
@@ -1257,7 +1257,7 @@ export class App extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-app': App
+    'hv-app': App
   }
 }
 ```
@@ -1283,7 +1283,7 @@ Expected: all vitest files PASS; `tsc --noEmit` clean; `vite build` writes `inte
 
 ```bash
 git add web/src/components/app.ts web/src/components/app.test.ts web/src/main.ts
-git commit -m "feat(web): cchv-app controller + bootstrap (three-pane UI)"
+git commit -m "feat(web): hv-app controller + bootstrap (three-pane UI)"
 ```
 
 ---
@@ -1317,10 +1317,10 @@ import (
 )
 
 func TestSPAHandler_ServesIndexAtRoot(t *testing.T) {
-	files := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><cchv-app></cchv-app>")}}
+	files := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><hv-app></hv-app>")}}
 	rec := httptest.NewRecorder()
 	NewHandler(files).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "cchv-app") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "hv-app") {
 		t.Fatalf("root: code=%d body=%q", rec.Code, rec.Body.String())
 	}
 }
@@ -1416,7 +1416,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Unbuilt checkout: helpful notice instead of a bare 404.
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("cchv web bundle not built. Run `make build` to build and embed the frontend.\n"))
+	_, _ = w.Write([]byte("hv web bundle not built. Run `make build` to build and embed the frontend.\n"))
 }
 
 // serveFile serves name from the FS if it exists and is a regular file,
@@ -1497,7 +1497,7 @@ Expected: `TestRootServesWebPage` FAILs — `/` returns 404 (no handler register
 
 In the import block, add:
 ```go
-	"jordandavis.dev/cc-harness-visualizer/internal/web"
+	"jordandavis.dev/harness-visualizer/internal/web"
 ```
 
 - [ ] **Step 3b: Register the route** in `NewServer`, after the `/api/sessions/` line:
@@ -1532,13 +1532,13 @@ git commit -m "feat(daemon): serve embedded web SPA at /"
 
 ---
 
-### Task 10: `cchv serve` launcher (`internal/client.EnsureDaemon` + `internal/serve`)
+### Task 10: `hv serve` launcher (`internal/client.EnsureDaemon` + `internal/serve`)
 
 **Files:**
 - Modify: `internal/client/client.go` (add `EnsureDaemon`, `daemonHealthy`)
 - Test: `internal/client/client_test.go` (add a `daemonHealthy` test — create the file if absent)
 - Create: `internal/serve/serve.go`, `internal/serve/serve_test.go`
-- Modify: `cmd/cchv/main.go` (dispatch `serve`)
+- Modify: `cmd/hv/main.go` (dispatch `serve`)
 
 - [ ] **Step 1: Write the failing test for `daemonHealthy`** (append to `internal/client/client_test.go`; create the file with this content if it does not exist)
 
@@ -1582,7 +1582,7 @@ Expected: FAIL — `undefined: daemonHealthy`.
 ```go
 // EnsureDaemon returns the daemon's "host:port", spawning the daemon if it is
 // not already reachable. It blocks up to ~3s for a freshly-spawned daemon to
-// write its port file and answer /healthz. Used by `cchv serve`.
+// write its port file and answer /healthz. Used by `hv serve`.
 func EnsureDaemon() (string, error) {
 	addr := resolveAddr()
 	if daemonHealthy(addr) {
@@ -1680,7 +1680,7 @@ Expected: FAIL — no such package / `undefined: run`.
 - [ ] **Step 7: Create `internal/serve/serve.go`**
 
 ```go
-// Package serve implements `cchv serve`: ensure the daemon is running, then
+// Package serve implements `hv serve`: ensure the daemon is running, then
 // open the system browser at the daemon's embedded web UI. It is a thin
 // launcher, not a second server — the daemon already serves the UI at /.
 package serve
@@ -1692,10 +1692,10 @@ import (
 	"os/exec"
 	"runtime"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/client"
+	"jordandavis.dev/harness-visualizer/internal/client"
 )
 
-// Run is the CLI entrypoint for `cchv serve`. args is currently unused.
+// Run is the CLI entrypoint for `hv serve`. args is currently unused.
 func Run(args []string) int {
 	_ = args
 	return run(client.EnsureDaemon, openBrowser, os.Stdout)
@@ -1711,7 +1711,7 @@ func run(ensure func() (string, error), open func(string) error, out io.Writer) 
 		return 1
 	}
 	url := "http://" + addr + "/"
-	fmt.Fprintf(out, "cchv serve: %s\n", url)
+	fmt.Fprintf(out, "hv serve: %s\n", url)
 	if err := open(url); err != nil {
 		fmt.Fprintln(os.Stderr, "serve: open browser: "+err.Error())
 	}
@@ -1736,11 +1736,11 @@ func openBrowser(url string) error {
 Run: `go test ./internal/serve/ -v`
 Expected: PASS (3 tests).
 
-- [ ] **Step 9: Dispatch `serve`** in `cmd/cchv/main.go`
+- [ ] **Step 9: Dispatch `serve`** in `cmd/hv/main.go`
 
 Add the import:
 ```go
-	"jordandavis.dev/cc-harness-visualizer/internal/serve"
+	"jordandavis.dev/harness-visualizer/internal/serve"
 ```
 
 Add a case to the `switch` (after the `tui` case):
@@ -1751,7 +1751,7 @@ Add a case to the `switch` (after the `tui` case):
 
 Add a usage line in `usage()` after the `tui` line:
 ```go
-  cchv serve      ensure the daemon is up and open the web UI in a browser
+  hv serve      ensure the daemon is up and open the web UI in a browser
 ```
 
 - [ ] **Step 10: Build + full Go test**
@@ -1762,8 +1762,8 @@ Expected: build OK; all Go packages PASS.
 - [ ] **Step 11: Commit**
 
 ```bash
-git add internal/client/client.go internal/client/client_test.go internal/serve/serve.go internal/serve/serve_test.go cmd/cchv/main.go
-git commit -m "feat(serve): cchv serve launcher + client.EnsureDaemon"
+git add internal/client/client.go internal/client/client_test.go internal/serve/serve.go internal/serve/serve_test.go cmd/hv/main.go
+git commit -m "feat(serve): hv serve launcher + client.EnsureDaemon"
 ```
 
 ---
@@ -1778,7 +1778,7 @@ The Makefile is the source of truth for building with the embedded frontend, so 
 - [ ] **Step 1: Create `Makefile`** (use TAB indentation for recipe lines)
 
 ```makefile
-BINARY := cchv
+BINARY := hv
 
 .PHONY: build web go-build test test-web clean
 
@@ -1789,7 +1789,7 @@ web:
 	cd web && npm ci && npm run build
 
 go-build:
-	go build -o $(BINARY) ./cmd/cchv
+	go build -o $(BINARY) ./cmd/hv
 
 # Go tests only (fast; no Node required).
 test:
@@ -1809,7 +1809,7 @@ clean:
 - [ ] **Step 2: Verify the full build**
 
 Run: `make build`
-Expected: npm build emits `internal/web/dist/{index.html,assets/}`; `go build` produces `./cchv`. No errors.
+Expected: npm build emits `internal/web/dist/{index.html,assets/}`; `go build` produces `./hv`. No errors.
 
 - [ ] **Step 3: Verify Go tests still pass via the Makefile**
 
@@ -1832,18 +1832,18 @@ git commit -m "build: Makefile with web+go build and test targets"
 - [ ] **Step 1: Build the embedded binary**
 
 Run: `make build`
-Expected: `./cchv` exists and embeds the real bundle (not just the notice).
+Expected: `./hv` exists and embeds the real bundle (not just the notice).
 
 - [ ] **Step 2: Confirm the binary serves the SPA, not the notice**
 
 Run:
 ```bash
-./cchv daemon --port 7843 &
+./hv daemon --port 7843 &
 sleep 1
 curl -s localhost:7843/ | head -c 300; echo
 curl -s -o /dev/null -w '%{http_code}\n' localhost:7843/api/sessions
 ```
-Expected: `/` returns HTML containing `<cchv-app>` (or the Vite-injected module script), NOT the "make build" notice; `/api/sessions` returns `200`.
+Expected: `/` returns HTML containing `<hv-app>` (or the Vite-injected module script), NOT the "make build" notice; `/api/sessions` returns `200`.
 
 - [ ] **Step 3: Post a paired Edit and confirm the timeline + detail endpoints**
 
@@ -1861,9 +1861,9 @@ Expected: timeline shows one `"kind":"operation"` with `"status":"success"`; the
 
 Run: `kill %1`
 
-- [ ] **Step 5 (optional): exercise `cchv serve`**
+- [ ] **Step 5 (optional): exercise `hv serve`**
 
-Run: `./cchv serve` (it ensures a daemon, prints the URL, and tries to open a browser; in a headless env the open may fail — that is non-fatal and the URL still prints). Stop any daemon it spawned with the pid in `daemon.pid` afterwards.
+Run: `./hv serve` (it ensures a daemon, prints the URL, and tries to open a browser; in a headless env the open may fail — that is non-fatal and the URL still prints). Stop any daemon it spawned with the pid in `daemon.pid` afterwards.
 
 - [ ] **Step 6: Record completion**
 
@@ -1879,11 +1879,11 @@ git commit -am "docs: Plan 2 (web UI frontend) complete and smoke-verified"
 - [ ] `go build ./...` and `go test ./...` are fully green (model, source, daemon, client, serve, web, tui).
 - [ ] `cd web && npm run build` type-checks clean and emits `internal/web/dist/{index.html,assets}`.
 - [ ] `cd web && npm run test` is green (client, stream, op-row, diff-view, app).
-- [ ] `make build` produces a single `./cchv` that serves the real SPA at `/` (not the unbuilt notice).
+- [ ] `make build` produces a single `./hv` that serves the real SPA at `/` (not the unbuilt notice).
 - [ ] `/api/sessions`, `/stream`, `/events`, `/healthz`, `/sessions`, `/sessions/` all still route correctly under the `/` catch-all mount.
 - [ ] No TS type referenced in a component is undefined in `api/types.ts`; wire field names match Plan 1's Go JSON tags (snake_case; `duration` in ns).
 - [ ] `internal/web/dist/.gitkeep` is committed; `internal/web/dist/*` and `web/node_modules` are gitignored.
-- [ ] The TUI still works unchanged (`cchv tui` against a running daemon) — Plan 2 touches no TUI code.
+- [ ] The TUI still works unchanged (`hv tui` against a running daemon) — Plan 2 touches no TUI code.
 
 ## What this plan deliberately defers (fast-follows, NOT built here)
 

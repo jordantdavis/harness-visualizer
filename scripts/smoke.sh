@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# smoke.sh — end-to-end plumbing smoke test for cchv.
+# smoke.sh — end-to-end plumbing smoke test for hv.
 #
 # Validates the capture path without a real Claude Code session:
 #   build → hook invocation → daemon auto-spawn → event lands in JSONL.
@@ -8,7 +8,7 @@
 #   ./scripts/smoke.sh
 #
 # Environment:
-#   CCHV_DATA_DIR is set to a fresh temp dir for the run and cleaned up on exit.
+#   HV_DATA_DIR is set to a fresh temp dir for the run and cleaned up on exit.
 #   No real session data is touched.
 #
 # What this does NOT cover (must be verified manually):
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="$REPO_ROOT/plugin/bin/cchv"
+BIN="$REPO_ROOT/plugin/bin/hv"
 DATA_DIR="$(mktemp -d)"
 DAEMON_PID=""
 
@@ -39,15 +39,15 @@ fail() { printf '\033[31mFAIL\033[0m  %s\n' "$1"; exit 1; }
 # ---------------------------------------------------------------------------
 # Step 1 — Build
 # ---------------------------------------------------------------------------
-printf '==> building plugin/bin/cchv\n'
-go build -o "$BIN" "$REPO_ROOT/cmd/cchv" || fail "go build failed"
+printf '==> building plugin/bin/hv\n'
+go build -o "$BIN" "$REPO_ROOT/cmd/hv" || fail "go build failed"
 pass "build"
 
 # ---------------------------------------------------------------------------
 # Step 2 — First hook invocation (daemon not running → spawn + drop event)
 # ---------------------------------------------------------------------------
 printf '==> sending hook payload 1 (spawns daemon, event dropped)\n'
-export CCHV_DATA_DIR="$DATA_DIR"
+export HV_DATA_DIR="$DATA_DIR"
 
 printf '{"hook_event_name":"PreToolUse","session_id":"smoke-test","tool_name":"Bash","cwd":"/tmp"}' \
   | "$BIN" hook
@@ -106,9 +106,9 @@ MANUAL VERIFICATION (cannot be automated here)
 2. Open a new Claude Code session in any project.
 3. Trigger at least one tool use (e.g. ask Claude to run `ls`).
 4. In another terminal:
-     cchv tui
+     hv tui
    You should see the session appear with PreToolUse / PostToolUse events.
 5. Or check the JSONL directly:
-     ls "${CCHV_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/cchv}/sessions/"
+     ls "${HV_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hv}/sessions/"
      cat <session-id>.jsonl | jq .
 MANUAL

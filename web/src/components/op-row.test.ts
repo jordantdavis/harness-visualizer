@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import './op-row'
 import type { OpRow } from './op-row'
 
-describe('cchv-op-row', () => {
+describe('hv-op-row', () => {
   it('renders tool, target, a success glyph, and a duration', async () => {
-    const el = document.createElement('cchv-op-row') as OpRow
+    const el = document.createElement('hv-op-row') as OpRow
     el.op = {
       id: 'a',
       tool: 'Edit',

@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // eventStatus is the derived status of an event row.

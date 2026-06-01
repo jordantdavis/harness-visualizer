@@ -2,7 +2,7 @@
 
 ## Status
 
-**COMPLETE & smoke-verified (2026-05-31).** All 11 tasks implemented via subagent-driven TDD on branch `feat/web-ui-backend-foundation`. `go build ./...`, `go vet ./...`, and `go test ./...` (all 9 packages) are green. Transcript schema (Task 7 Step 6) was validated against a real `~/.claude/projects/.../*.jsonl` — fields match (`type`, `timestamp` RFC3339, `message.role`/`content`, blocks `text`/`thinking`/`tool_use.id`). End-to-end smoke against a running daemon confirmed `/api/sessions`, `/api/sessions/{id}/timeline` (ops-only graceful degradation), and `/api/sessions/{id}/operations/{id}` (diff detail). A final code review added two follow-ups: a 404 guard for empty opID and a `Duration` wire-unit doc note. Plan 2 (Lit frontend + `go:embed` + `cchv serve`) is next.
+**COMPLETE & smoke-verified (2026-05-31).** All 11 tasks implemented via subagent-driven TDD on branch `feat/web-ui-backend-foundation`. `go build ./...`, `go vet ./...`, and `go test ./...` (all 9 packages) are green. Transcript schema (Task 7 Step 6) was validated against a real `~/.claude/projects/.../*.jsonl` — fields match (`type`, `timestamp` RFC3339, `message.role`/`content`, blocks `text`/`thinking`/`tool_use.id`). End-to-end smoke against a running daemon confirmed `/api/sessions`, `/api/sessions/{id}/timeline` (ops-only graceful degradation), and `/api/sessions/{id}/operations/{id}` (diff detail). A final code review added two follow-ups: a 404 guard for empty opID and a `Duration` wire-unit doc note. Plan 2 (Lit frontend + `go:embed` + `hv serve`) is next.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -18,7 +18,7 @@
 
 ## Scope & sequencing notes (read first)
 
-- **This is Plan 1 of 2.** Plan 1 = backend foundation (this document). Plan 2 = the Lit frontend, `go:embed`, and `cchv serve`.
+- **This is Plan 1 of 2.** Plan 1 = backend foundation (this document). Plan 2 = the Lit frontend, `go:embed`, and `hv serve`.
 - **`internal/model` is the new single source of truth for derivation.** The TUI currently has its own render-layer derivation (`internal/tui/format.go`, `pairing.go`, `inspect.go`). Plan 1 builds `internal/model` and points the **API** at it; it does **not** rewrite the TUI's rendering. Consolidating the TUI onto `internal/model` (deleting its duplicated pairing/status logic) is a **follow-up refactor plan** — it is a behavior-preserving change of presentation code best done independently with the TUI's own test suite as the net. The temporary overlap is intentional and tracked.
 - **v1 timeline is returned whole, not paginated.** `GET /api/.../timeline` accepts `after`/`limit` query params for forward-compatibility but v1 returns the full session timeline (correct pairing requires whole-history context; the client upserts by `Operation.ID`). True seq-cursor pagination is a fast-follow.
 - **v1 operations = tool calls only.** `BuildOperations` pairs `PreToolUse`/`PostToolUse`. Non-tool lifecycle events (`SessionStart`, `Stop`, …) are dropped from the timeline for v1; user/assistant narrative comes from transcript **turns**.
@@ -57,7 +57,7 @@ package model
 import (
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func TestDeriveStatus(t *testing.T) {
@@ -102,7 +102,7 @@ package model
 import (
 	"encoding/json"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Status is the derived lifecycle/result state of an operation, as a stable
@@ -181,7 +181,7 @@ package model
 import (
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func TestExtractTarget(t *testing.T) {
@@ -238,7 +238,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // ExtractTarget returns a short, human-readable description of what an event
@@ -340,7 +340,7 @@ import (
 	"testing"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func ev(seq int64, hook, tool, raw string, at time.Time) *event.Event {
@@ -425,7 +425,7 @@ import (
 	"sort"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Operation is one tool invocation: a PreToolUse paired with its PostToolUse
@@ -694,7 +694,7 @@ package model
 import (
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func TestBuildOperationDetail_EditProducesDiff(t *testing.T) {
@@ -766,7 +766,7 @@ package model
 import (
 	"encoding/json"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // OperationDetail is the heavy, lazily-fetched payload for one operation. Only
@@ -1093,7 +1093,7 @@ import (
 	"strings"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/model"
+	"jordandavis.dev/harness-visualizer/internal/model"
 )
 
 const (
@@ -1242,8 +1242,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // newTestServer builds a Server over a temp store and appends the given events.
@@ -1330,9 +1330,9 @@ import (
 	"net/http"
 	"strings"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/model"
-	"jordandavis.dev/cc-harness-visualizer/internal/source/claudecode"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/model"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // handleAPISessions: GET /api/sessions — same payload as /sessions, under /api.
@@ -1410,7 +1410,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 Add the `event` import to `api.go`'s import block:
 ```go
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1613,8 +1613,8 @@ git commit -m "refactor(tui): read sessions via /api/sessions"
 
 - [ ] **Step 1: Build and run the daemon**
 
-Run: `go build -o /tmp/cchv ./cmd/cchv && /tmp/cchv daemon --port 7842 &`
-Expected: prints `cchv daemon listening on 127.0.0.1:7842`.
+Run: `go build -o /tmp/hv ./cmd/hv && /tmp/hv daemon --port 7842 &`
+Expected: prints `hv daemon listening on 127.0.0.1:7842`.
 
 - [ ] **Step 2: Post two fake events (a paired Edit) and read the timeline**
 
@@ -1647,16 +1647,16 @@ git commit -am "docs: Plan 1 (backend foundation) complete and smoke-verified"
 ## Self-review checklist (run after implementing all tasks)
 
 - [ ] `go test ./...` is fully green, including the pre-existing TUI and daemon suites.
-- [ ] `go build ./...` produces a binary; `cchv tui` still works against the daemon.
+- [ ] `go build ./...` produces a binary; `hv tui` still works against the daemon.
 - [ ] No `model` symbol is referenced before the task that defines it (status → target → operation → diff → detail → timeline → api).
 - [ ] The transcript schema was validated against a real file (Task 7 Step 6) OR explicitly noted as deferred.
 - [ ] No endpoint leaks `null` instead of `[]` (sessions, timeline both guarded).
 
 ## What Plan 2 covers (not this plan)
 
-- `web/` Lit + Vite scaffold; `cchv-app` / session-list / timeline / inspector components.
+- `web/` Lit + Vite scaffold; `hv-app` / session-list / timeline / inspector components.
 - `EventSource('/stream')` + nudge-refetch wiring; upsert by `Operation.ID`.
-- `internal/web` `go:embed` + SPA handler mounted at `/`; `cchv serve` launcher.
+- `internal/web` `go:embed` + SPA handler mounted at `/`; `hv serve` launcher.
 - Makefile (`build: web`), dev Vite proxy, CI split.
 
 ## Deferred to a later refactor plan (tracked, not lost)

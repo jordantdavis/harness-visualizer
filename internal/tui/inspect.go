@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // stripANSIInspect removes ANSI escape sequences from s for plain-text

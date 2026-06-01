@@ -51,7 +51,7 @@ func (h *spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Unbuilt checkout: helpful notice instead of a bare 404.
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("cchv web bundle not built. Run `make build` to build and embed the frontend.\n"))
+	_, _ = w.Write([]byte("hv web bundle not built. Run `make build` to build and embed the frontend.\n"))
 }
 
 // serveFile serves name from the FS if it exists and is a regular file,

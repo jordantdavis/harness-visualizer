@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/paths"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/paths"
 )
 
 // transcriptCacheKey uniquely identifies a cached transcript parse by file

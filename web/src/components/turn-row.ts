@@ -3,7 +3,7 @@ import { customElement, property } from 'lit/decorators.js'
 import type { Turn } from '../api/types'
 
 /** Single conversation turn row: role label + optional thinking block + message text. */
-@customElement('cchv-turn-row')
+@customElement('hv-turn-row')
 export class TurnRow extends LitElement {
   @property({ attribute: false }) turn!: Turn
 
@@ -42,6 +42,6 @@ export class TurnRow extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-turn-row': TurnRow
+    'hv-turn-row': TurnRow
   }
 }

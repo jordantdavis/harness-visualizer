@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/paths"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/paths"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // defaultPort is the well-known daemon port, used when the port file is absent.

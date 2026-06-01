@@ -1,4 +1,4 @@
-// Package daemon implements the cchv HTTP daemon: it receives hook events via
+// Package daemon implements the hv HTTP daemon: it receives hook events via
 // POST, persists them through a per-session writer goroutine, and fans them
 // out live over SSE. A single Server value is the testable unit; Run is the
 // thin CLI entrypoint.
@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/paths"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
-	"jordandavis.dev/cc-harness-visualizer/internal/web"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/paths"
+	"jordandavis.dev/harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/web"
 )
 
 const (
@@ -359,7 +359,7 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 // ---- Run entrypoint ----
 
-// Run is the CLI entrypoint for `cchv daemon`. args should not include the
+// Run is the CLI entrypoint for `hv daemon`. args should not include the
 // subcommand name. Returns an OS exit code (0 = success).
 //
 // Flags:
@@ -414,7 +414,7 @@ func Run(args []string) int {
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "cchv daemon listening on %s\n", addr)
+	fmt.Fprintf(os.Stdout, "hv daemon listening on %s\n", addr)
 
 	// Block until SIGINT or SIGTERM.
 	quit := make(chan os.Signal, 1)

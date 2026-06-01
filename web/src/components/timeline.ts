@@ -4,7 +4,7 @@ import type { TimelineItem } from '../api/types'
 import './op-row'
 import './turn-row'
 
-@customElement('cchv-timeline')
+@customElement('hv-timeline')
 export class Timeline extends LitElement {
   @property({ attribute: false }) items: TimelineItem[] = []
   @property() selectedOpId = ''
@@ -26,13 +26,13 @@ export class Timeline extends LitElement {
       ${this.items.map((it) => {
         if (it.kind === 'operation' && it.op) {
           const op = it.op
-          return html`<cchv-op-row
+          return html`<hv-op-row
             .op=${op}
             ?selected=${op.id !== '' && op.id === this.selectedOpId}
             @click=${() => op.id && this.pickOp(op.id)}
-          ></cchv-op-row>`
+          ></hv-op-row>`
         }
-        if (it.kind === 'turn' && it.turn) return html`<cchv-turn-row .turn=${it.turn}></cchv-turn-row>`
+        if (it.kind === 'turn' && it.turn) return html`<hv-turn-row .turn=${it.turn}></hv-turn-row>`
         return ''
       })}
     </div>`
@@ -41,6 +41,6 @@ export class Timeline extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-timeline': Timeline
+    'hv-timeline': Timeline
   }
 }

@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"strings"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/model"
-	"jordandavis.dev/cc-harness-visualizer/internal/source/claudecode"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/model"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // handleAPISessions: GET /api/sessions — same payload as /sessions, under /api.

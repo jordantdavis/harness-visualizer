@@ -1,7 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-code-view')
+@customElement('hv-code-view')
 export class CodeView extends LitElement {
   @property() command = ''
   @property() output = ''
@@ -26,6 +26,6 @@ export class CodeView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-code-view': CodeView
+    'hv-code-view': CodeView
   }
 }

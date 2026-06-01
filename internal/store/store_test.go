@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func newTestStore(t *testing.T) *Store {

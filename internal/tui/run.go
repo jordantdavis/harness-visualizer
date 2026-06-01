@@ -1,6 +1,6 @@
 // Package tui — run.go
 //
-// Run is the entrypoint for `cchv tui`. It parses flags, respects NO_COLOR,
+// Run is the entrypoint for `hv tui`. It parses flags, respects NO_COLOR,
 // and either starts the bubbletea UI or runs plain line-per-event mode.
 package tui
 
@@ -12,7 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Run is the entrypoint for `cchv tui`. args may include:
+// Run is the entrypoint for `hv tui`. args may include:
 //
 //	--plain         line-per-event mode (no bubbletea UI; pipe/screen-reader safe)
 //	--no-animation  disable animated indicators (static heartbeat, no blinking)
@@ -22,7 +22,7 @@ import (
 //
 // Returns 0 on clean exit, 1 on error.
 func Run(args []string) int {
-	fs := flag.NewFlagSet("cchv tui", flag.ContinueOnError)
+	fs := flag.NewFlagSet("hv tui", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	plain := fs.Bool("plain", false, "line-per-event mode (screen-reader / pipe / bug-report friendly)")
 	noAnim := fs.Bool("no-animation", false, "disable animated indicators (reduced motion)")
@@ -52,7 +52,7 @@ func Run(args []string) int {
 
 	p := tea.NewProgram(m, opts...)
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "cchv tui: %v\n", err)
+		fmt.Fprintf(os.Stderr, "hv tui: %v\n", err)
 		return 1
 	}
 	return 0

@@ -1,6 +1,6 @@
-// Package paths resolves the on-disk locations cchv uses: data (session
+// Package paths resolves the on-disk locations hv uses: data (session
 // JSONL), runtime (port file, pidfile, daemon log), and per-session
-// filenames. Resolution honors CCHV_DATA_DIR, then XDG_DATA_HOME, then
+// filenames. Resolution honors HV_DATA_DIR, then XDG_DATA_HOME, then
 // ~/.local/share. Directories are created on demand.
 package paths
 
@@ -10,16 +10,16 @@ import (
 	"strings"
 )
 
-const appName = "cchv"
+const appName = "hv"
 
 // DataDir returns the base data directory, creating it if absent.
 //
 // Resolution order:
-//  1. $CCHV_DATA_DIR (non-empty)
-//  2. $XDG_DATA_HOME/cchv
-//  3. ~/.local/share/cchv
+//  1. $HV_DATA_DIR (non-empty)
+//  2. $XDG_DATA_HOME/hv
+//  3. ~/.local/share/hv
 func DataDir() (string, error) {
-	dir := os.Getenv("CCHV_DATA_DIR")
+	dir := os.Getenv("HV_DATA_DIR")
 	if dir == "" {
 		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 			dir = filepath.Join(xdg, appName)
@@ -52,7 +52,7 @@ func SessionsDir() (string, error) {
 }
 
 // RuntimeDir returns the directory for transient runtime files (port file,
-// pidfile). Prefers $XDG_RUNTIME_DIR/cchv; falls back to DataDir.
+// pidfile). Prefers $XDG_RUNTIME_DIR/hv; falls back to DataDir.
 func RuntimeDir() (string, error) {
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
 		dir := filepath.Join(xdg, appName)

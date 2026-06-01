@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // --- parseFilter ------------------------------------------------------------

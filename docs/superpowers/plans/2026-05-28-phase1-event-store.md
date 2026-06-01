@@ -6,7 +6,7 @@
 
 **Architecture:** Three small, focused packages under `internal/`. `event` defines the wire/disk contract (canonical envelope + raw passthrough). `paths` resolves XDG data/runtime directories and filenames. `store` owns disk I/O: a thread-safe per-session JSONL writer that assigns a monotonic per-session sequence number, plus readers for history and session listing. The store takes its directory by injection so it is fully testable against `t.TempDir()`. Buffering/flush sophistication is deliberately deferred to the daemon (Phase 2); this phase keeps `Append` synchronous-but-thread-safe.
 
-**Tech Stack:** Go 1.26, standard library only (`encoding/json`, `os`, `path/filepath`, `bufio`, `sync`). Module path: `jordandavis.dev/cc-harness-visualizer`.
+**Tech Stack:** Go 1.26, standard library only (`encoding/json`, `os`, `path/filepath`, `bufio`, `sync`). Module path: `jordandavis.dev/harness-visualizer`.
 
 ---
 
@@ -202,7 +202,7 @@ import (
 
 func TestDataDirHonorsOverride(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", tmp)
+	t.Setenv("HV_DATA_DIR", tmp)
 
 	dir, err := DataDir()
 	if err != nil {
@@ -215,14 +215,14 @@ func TestDataDirHonorsOverride(t *testing.T) {
 
 func TestDataDirFallsBackToXDG(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", "")
+	t.Setenv("HV_DATA_DIR", "")
 	t.Setenv("XDG_DATA_HOME", tmp)
 
 	dir, err := DataDir()
 	if err != nil {
 		t.Fatalf("DataDir error: %v", err)
 	}
-	want := filepath.Join(tmp, "cchv")
+	want := filepath.Join(tmp, "hv")
 	if dir != want {
 		t.Errorf("DataDir = %q, want %q", dir, want)
 	}
@@ -230,7 +230,7 @@ func TestDataDirFallsBackToXDG(t *testing.T) {
 
 func TestSessionsDirIsUnderDataDir(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", tmp)
+	t.Setenv("HV_DATA_DIR", tmp)
 
 	dir, err := SessionsDir()
 	if err != nil {
@@ -267,9 +267,9 @@ Expected: FAIL — build error, `undefined: DataDir` etc.
 Create `internal/paths/paths.go`:
 
 ```go
-// Package paths resolves the on-disk locations cchv uses: data (session
+// Package paths resolves the on-disk locations hv uses: data (session
 // JSONL), runtime (port file, pidfile, daemon log), and per-session
-// filenames. Resolution honors CCHV_DATA_DIR, then XDG_DATA_HOME, then
+// filenames. Resolution honors HV_DATA_DIR, then XDG_DATA_HOME, then
 // ~/.local/share. Directories are created on demand.
 package paths
 
@@ -279,11 +279,11 @@ import (
 	"strings"
 )
 
-const appName = "cchv"
+const appName = "hv"
 
 // DataDir returns the base data directory, creating it if absent.
 func DataDir() (string, error) {
-	dir := os.Getenv("CCHV_DATA_DIR")
+	dir := os.Getenv("HV_DATA_DIR")
 	if dir == "" {
 		if xdg := os.Getenv("XDG_DATA_HOME"); xdg != "" {
 			dir = filepath.Join(xdg, appName)
@@ -416,7 +416,7 @@ import (
 	"sync"
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -548,8 +548,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/paths"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/paths"
 )
 
 // Store appends and reads per-session JSONL event logs under dir.

@@ -1,7 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-top-bar')
+@customElement('hv-top-bar')
 export class TopBar extends LitElement {
   @property({ type: Boolean }) live = false
   @property({ type: Boolean }) daemonOk = false
@@ -26,7 +26,7 @@ export class TopBar extends LitElement {
 
   render() {
     return html`
-      <span class="name">cchv</span>
+      <span class="name">hv</span>
       <span class="${this.daemonOk ? 'ok' : 'bad'}"
         >${this.daemonOk ? '● daemon' : '○ daemon'}</span
       >
@@ -37,6 +37,6 @@ export class TopBar extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-top-bar': TopBar
+    'hv-top-bar': TopBar
   }
 }

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // writeTranscriptLines writes JSONL lines to a temp file and returns its path.

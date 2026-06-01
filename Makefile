@@ -1,4 +1,4 @@
-BINARY := cchv
+BINARY := hv
 
 .PHONY: build web go-build test test-web clean
 
@@ -13,7 +13,7 @@ web:
 	touch internal/web/dist/.gitkeep
 
 go-build:
-	go build -o $(BINARY) ./cmd/cchv
+	go build -o $(BINARY) ./cmd/hv
 
 # Go tests only (fast; no Node required).
 test:

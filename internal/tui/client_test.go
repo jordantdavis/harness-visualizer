@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // canonicalSessions is the fixture used by client tests.

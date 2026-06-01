@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Operation is one tool invocation: a PreToolUse paired with its PostToolUse

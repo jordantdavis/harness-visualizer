@@ -4,7 +4,7 @@ package model
 import (
 	"encoding/json"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // OperationDetail is the heavy, lazily-fetched payload for one operation. Only

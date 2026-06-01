@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // displayRow is one row in the events pane. It is either a folded paired op

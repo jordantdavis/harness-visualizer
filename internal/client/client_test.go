@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // noSpawn is a no-op spawn function used in most tests.

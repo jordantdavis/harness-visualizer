@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/model"
+	"jordandavis.dev/harness-visualizer/internal/model"
 )
 
 const (

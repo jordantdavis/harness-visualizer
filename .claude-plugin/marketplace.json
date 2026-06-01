@@ -1,10 +1,10 @@
 {
-  "name": "cc-harness-visualizer",
+  "name": "harness-visualizer",
   "owner": { "name": "Jordan Davis" },
-  "metadata": { "description": "Local dev marketplace for cchv — the Claude Code Harness Visualizer." },
+  "metadata": { "description": "Local dev marketplace for hv — the Claude Code Harness Visualizer." },
   "plugins": [
     {
-      "name": "cchv",
+      "name": "hv",
       "description": "See what your Claude Code harness actually does — capture every hook event.",
       "source": "./plugin"
     }

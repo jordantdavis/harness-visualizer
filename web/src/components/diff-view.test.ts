@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import './diff-view'
 import type { DiffView } from './diff-view'
 
-describe('cchv-diff-view', () => {
+describe('hv-diff-view', () => {
   it('renders one del and one add line', async () => {
-    const el = document.createElement('cchv-diff-view') as DiffView
+    const el = document.createElement('hv-diff-view') as DiffView
     el.diff = [
       { kind: 'context', text: 'a' },
       { kind: 'del', text: 'b' },

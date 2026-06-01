@@ -4,7 +4,7 @@
 //
 // Usage (via --plain flag):
 //
-//	cchv tui --plain
+//	hv tui --plain
 //
 // Output format (one line per event, no ANSI):
 //
@@ -30,8 +30,8 @@ import (
 	"strings"
 	"syscall"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // plainTag returns the fixed-width (5-char) text tag for a status in plain mode.
@@ -84,7 +84,7 @@ func runPlain(ctx context.Context, c Client, w io.Writer) error {
 		return fmt.Errorf("plain: list sessions: %w", err)
 	}
 	if len(sessions) == 0 {
-		fmt.Fprintln(w, "# no sessions yet — start Claude Code with the cchv plugin installed")
+		fmt.Fprintln(w, "# no sessions yet — start Claude Code with the hv plugin installed")
 		return nil
 	}
 
@@ -145,7 +145,7 @@ func runPlainMain(c Client) int {
 	}()
 
 	if err := runPlain(ctx, c, os.Stdout); err != nil {
-		fmt.Fprintf(os.Stderr, "cchv tui --plain: %v\n", err)
+		fmt.Fprintf(os.Stderr, "hv tui --plain: %v\n", err)
 		return 1
 	}
 	return 0

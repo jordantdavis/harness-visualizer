@@ -7,7 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // --- statusGlyph ---

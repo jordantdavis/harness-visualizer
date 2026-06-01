@@ -7,7 +7,7 @@ import (
 
 func TestDataDirHonorsOverride(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", tmp)
+	t.Setenv("HV_DATA_DIR", tmp)
 
 	dir, err := DataDir()
 	if err != nil {
@@ -20,14 +20,14 @@ func TestDataDirHonorsOverride(t *testing.T) {
 
 func TestDataDirFallsBackToXDG(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", "")
+	t.Setenv("HV_DATA_DIR", "")
 	t.Setenv("XDG_DATA_HOME", tmp)
 
 	dir, err := DataDir()
 	if err != nil {
 		t.Fatalf("DataDir error: %v", err)
 	}
-	want := filepath.Join(tmp, "cchv")
+	want := filepath.Join(tmp, "hv")
 	if dir != want {
 		t.Errorf("DataDir = %q, want %q", dir, want)
 	}
@@ -35,7 +35,7 @@ func TestDataDirFallsBackToXDG(t *testing.T) {
 
 func TestSessionsDirIsUnderDataDir(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("CCHV_DATA_DIR", tmp)
+	t.Setenv("HV_DATA_DIR", tmp)
 
 	dir, err := SessionsDir()
 	if err != nil {
@@ -50,13 +50,13 @@ func TestSessionsDirIsUnderDataDir(t *testing.T) {
 func TestRuntimeDirHonorsXDGRuntimeDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", tmp)
-	t.Setenv("CCHV_DATA_DIR", "")
+	t.Setenv("HV_DATA_DIR", "")
 
 	dir, err := RuntimeDir()
 	if err != nil {
 		t.Fatalf("RuntimeDir error: %v", err)
 	}
-	want := filepath.Join(tmp, "cchv")
+	want := filepath.Join(tmp, "hv")
 	if dir != want {
 		t.Errorf("RuntimeDir = %q, want %q", dir, want)
 	}
@@ -65,7 +65,7 @@ func TestRuntimeDirHonorsXDGRuntimeDir(t *testing.T) {
 func TestRuntimeDirFallsBackToDataDir(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("XDG_RUNTIME_DIR", "")
-	t.Setenv("CCHV_DATA_DIR", tmp)
+	t.Setenv("HV_DATA_DIR", tmp)
 
 	dir, err := RuntimeDir()
 	if err != nil {

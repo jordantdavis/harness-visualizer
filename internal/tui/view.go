@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // View renders the full terminal frame. It delegates to layout-specific helpers.
@@ -63,7 +63,7 @@ func viewTooSmall(cols, rows int) string {
 // is down, otherwise the heartbeat / idle indicator.
 //
 // All segments are styled with semantic tokens:
-//   - "cchv" → bold/bright
+//   - "hv" → bold/bright
 //   - "● daemon" → success(green) for the bullet when OK
 //   - ":port" / separators → muted/faint
 //   - live indicator / rate → accent(blue) for ▮ rate, success for "live"
@@ -72,12 +72,12 @@ func viewTooSmall(cols, rows int) string {
 func (m model) viewStatusBar() string {
 	tok := themeFor(m.noColor)
 
-	// "cchv" — bold/bright.
+	// "hv" — bold/bright.
 	var appName string
 	if m.noColor {
-		appName = "cchv"
+		appName = "hv"
 	} else {
-		appName = tok.header.Render("cchv")
+		appName = tok.header.Render("hv")
 	}
 
 	sep := " │ "
@@ -433,13 +433,13 @@ func (m model) viewSessionsPane(w, h int) string {
 		lines = append(lines, "")
 		if !m.daemonOK {
 			lines = append(lines, clip("Is the daemon running?", w))
-			lines = append(lines, clip("Run: cchv daemon --foreground", w))
+			lines = append(lines, clip("Run: hv daemon --foreground", w))
 		}
 	case len(m.sessions) == 0:
 		lines = append(lines, "")
 		lines = append(lines, clip("No sessions yet.", w))
 		lines = append(lines, "")
-		lines = append(lines, clip("Start Claude Code with the cchv", w))
+		lines = append(lines, clip("Start Claude Code with the hv", w))
 		lines = append(lines, clip("plugin installed to capture events.", w))
 		lines = append(lines, "")
 		lines = append(lines, clip("Daemon: "+m.daemonStatusText(), w))
@@ -661,7 +661,7 @@ func (m model) viewInspectorPane(w, h int) string {
 // viewHelp renders the ? help overlay.
 func (m model) viewHelp() string {
 	lines := []string{
-		padRight("HELP — cchv keyboard shortcuts", m.width),
+		padRight("HELP — hv keyboard shortcuts", m.width),
 		padRight("", m.width),
 		padRight("  Tab / 1 2 3    Switch pane focus (depth-aware)", m.width),
 		padRight("  j / k          Move cursor up/down", m.width),

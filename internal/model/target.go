@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // ExtractTarget returns a short, human-readable description of what an event

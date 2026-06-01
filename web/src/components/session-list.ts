@@ -2,7 +2,7 @@ import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { SessionInfo } from '../api/types'
 
-@customElement('cchv-session-list')
+@customElement('hv-session-list')
 export class SessionList extends LitElement {
   @property({ attribute: false }) sessions: SessionInfo[] = []
   @property() selectedId = ''
@@ -51,6 +51,6 @@ export class SessionList extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-session-list': SessionList
+    'hv-session-list': SessionList
   }
 }

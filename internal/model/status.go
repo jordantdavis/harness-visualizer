@@ -9,7 +9,7 @@ package model
 import (
 	"encoding/json"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 // Status is the derived lifecycle/result state of an operation, as a stable

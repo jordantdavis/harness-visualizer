@@ -10,7 +10,7 @@ const GLYPH = {
 } satisfies Record<Status, string>
 
 /** Single timeline operation row: status glyph + tool name + target + duration. */
-@customElement('cchv-op-row')
+@customElement('hv-op-row')
 export class OpRow extends LitElement {
   @property({ attribute: false }) op!: Operation
   @property({ type: Boolean, reflect: true }) selected = false
@@ -62,6 +62,6 @@ export class OpRow extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-op-row': OpRow
+    'hv-op-row': OpRow
   }
 }

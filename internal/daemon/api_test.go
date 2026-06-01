@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // newTestServer builds a Server over a temp store and appends the given events.

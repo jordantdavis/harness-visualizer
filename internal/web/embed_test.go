@@ -9,10 +9,10 @@ import (
 )
 
 func TestSPAHandler_ServesIndexAtRoot(t *testing.T) {
-	files := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><cchv-app></cchv-app>")}}
+	files := fstest.MapFS{"index.html": {Data: []byte("<!doctype html><hv-app></hv-app>")}}
 	rec := httptest.NewRecorder()
 	NewHandler(files).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "cchv-app") {
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "hv-app") {
 		t.Fatalf("root: code=%d body=%q", rec.Code, rec.Body.String())
 	}
 }

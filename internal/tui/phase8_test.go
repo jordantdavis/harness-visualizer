@@ -12,8 +12,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // ============================================================
@@ -30,7 +30,7 @@ func phase8Model() model {
 			EventCount: 214,
 			LastSeq:    214,
 			ModTime:    t0,
-			CWD:        "/home/user/workspace/cc-harness-visualizer",
+			CWD:        "/home/user/workspace/harness-visualizer",
 			Title:      "Improve TUI design and UX issues",
 		},
 		{
@@ -38,7 +38,7 @@ func phase8Model() model {
 			EventCount: 57,
 			LastSeq:    57,
 			ModTime:    t0.Add(-3 * time.Minute),
-			CWD:        "/home/user/workspace/cc-harness-visualizer",
+			CWD:        "/home/user/workspace/harness-visualizer",
 			Title:      "Fix daemon reconnect race",
 		},
 		{
@@ -781,8 +781,8 @@ func TestSessionRowShowsProject(t *testing.T) {
 	m := phase8Model()
 	m.layout = LayoutBrowse
 	paneStr := m.viewSessionsPane(36, 20)
-	// project = filepath.Base(CWD) = "cc-harness-visualizer"
-	if !strings.Contains(paneStr, "cc-harness-visualizer") {
+	// project = filepath.Base(CWD) = "harness-visualizer"
+	if !strings.Contains(paneStr, "harness-visualizer") {
 		t.Errorf("session pane must show project name, got:\n%s", paneStr)
 	}
 }

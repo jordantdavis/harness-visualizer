@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cchv — TUI redesign mockup</title>
+<title>hv — TUI redesign mockup</title>
 <style>
   /* ---- Terminal palette (dark, 16-color-ANSI faithful) ----
      These map to the lipgloss AdaptiveColor "Dark" indices used in theme.go:
@@ -163,7 +163,7 @@
 </head>
 <body>
 
-<h1>cchv — interactive TUI redesign (two-column slide model)</h1>
+<h1>hv — interactive TUI redesign (two-column slide model)</h1>
 <p class="sub">
   Two-column master-detail (≥80 cols). <b>Browse</b> shows <code>Sessions │ Events</code>; pressing
   <code>Enter</code> on an <i>event</i> slides into <b>Drill</b> = <code>Events │ Inspector</code> (Sessions hides,
@@ -182,11 +182,11 @@
 <div class="term">
   <div class="titlebar">
     <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-    <span class="name">cchv tui — 110×30 · BROWSE</span>
+    <span class="name">hv tui — 110×30 · BROWSE</span>
   </div>
 
   <div class="screen">
-<div class="statusbar row"><span class="bold">cchv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
+<div class="statusbar row"><span class="bold">hv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
 
   <div class="panes browse">
 
@@ -195,11 +195,11 @@
       <div class="ptitle">SESSIONS</div>
       <div class="body">
 <span class="srow sel"><span class="scaret">▸</span><span class="live">●</span> <span class="sproj">Improve TUI design and UX issues</span>
-<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · live · 214</span></span>
+<span class="scaret"> </span>  <span class="smeta">harness-visualizer · live · 214</span></span>
 <span class="srow"><span class="scaret"> </span><span class="live">●</span> <span class="sproj">Fix daemon reconnect race</span>
-<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · live · 57</span></span>
+<span class="scaret"> </span>  <span class="smeta">harness-visualizer · live · 57</span></span>
 <span class="srow"><span class="scaret"> </span>  <span class="sproj">Add SSE backpressure handling</span>
-<span class="scaret"> </span>  <span class="smeta">cc-harness-visualizer · 3m · 1.2k</span></span>
+<span class="scaret"> </span>  <span class="smeta">harness-visualizer · 3m · 1.2k</span></span>
 <span class="srow"><span class="scaret"> </span><span class="live">●</span> <span class="sproj">Wire up plugin manifest</span>
 <span class="scaret"> </span>  <span class="smeta">api-gateway · live · 43</span></span>
 <span class="srow"><span class="scaret"> </span>  <span class="sproj">Dotfile symlink cleanup</span>
@@ -245,11 +245,11 @@
 <div class="term">
   <div class="titlebar">
     <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-    <span class="name">cchv tui — 110×30 · DRILL</span>
+    <span class="name">hv tui — 110×30 · DRILL</span>
   </div>
 
   <div class="screen">
-<div class="statusbar row"><span class="bold">cchv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
+<div class="statusbar row"><span class="bold">hv</span> <span class="sep">│</span> <span class="g">● daemon</span> <span class="dim">:7842</span> <span class="sep">│</span> <span class="g">live</span> <span class="dim">·</span> <span class="b">▮ 4/s</span> <span class="sep">│</span> session <span class="dim">Improve TUI design… · 9f3a1c2</span> <span class="sep">│</span> <span class="r-">✘ 1 error</span></div>
 
   <div class="panes drill">
 

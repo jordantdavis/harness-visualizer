@@ -4,7 +4,7 @@ package model
 import (
 	"testing"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/event"
 )
 
 func TestDeriveStatus(t *testing.T) {

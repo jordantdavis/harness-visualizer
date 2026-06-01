@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]
@@ -102,7 +102,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/cchv\" hook",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/hv\" hook",
             "async": true
           }
         ]

@@ -5,7 +5,7 @@ import './diff-view'
 import './code-view'
 import './raw-view'
 
-@customElement('cchv-inspector')
+@customElement('hv-inspector')
 export class Inspector extends LitElement {
   @property({ attribute: false }) detail?: OperationDetail
 
@@ -32,23 +32,23 @@ export class Inspector extends LitElement {
     return html`
       <div class="hdr">${d.tool}${d.file_path ? ` · ${d.file_path}` : ''}</div>
       ${d.detail_kind === 'diff'
-        ? html`<cchv-diff-view .diff=${d.diff ?? []}></cchv-diff-view>`
+        ? html`<hv-diff-view .diff=${d.diff ?? []}></hv-diff-view>`
         : ''}
       ${d.detail_kind === 'output'
-        ? html`<cchv-code-view
+        ? html`<hv-code-view
             .command=${d.command ?? ''}
             .output=${d.output ?? ''}
             .exitCode=${d.exit_code}
-          ></cchv-code-view>`
+          ></hv-code-view>`
         : ''}
       <div class="section">raw</div>
-      <cchv-raw-view .value=${{ pre: d.raw_pre, post: d.raw_post }}></cchv-raw-view>
+      <hv-raw-view .value=${{ pre: d.raw_pre, post: d.raw_post }}></hv-raw-view>
     `
   }
 }
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-inspector': Inspector
+    'hv-inspector': Inspector
   }
 }

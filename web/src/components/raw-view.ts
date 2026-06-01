@@ -1,7 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 
-@customElement('cchv-raw-view')
+@customElement('hv-raw-view')
 export class RawView extends LitElement {
   @property({ attribute: false }) value: unknown
 
@@ -22,6 +22,6 @@ export class RawView extends LitElement {
 
 declare global {
   interface HTMLElementTagNameMap {
-    'cchv-raw-view': RawView
+    'hv-raw-view': RawView
   }
 }

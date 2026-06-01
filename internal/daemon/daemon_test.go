@@ -18,9 +18,9 @@ import (
 	"testing"
 	"time"
 
-	"jordandavis.dev/cc-harness-visualizer/internal/daemon"
-	"jordandavis.dev/cc-harness-visualizer/internal/event"
-	"jordandavis.dev/cc-harness-visualizer/internal/store"
+	"jordandavis.dev/harness-visualizer/internal/daemon"
+	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
 // newTestServer creates a Server backed by a temp-dir store and an httptest
