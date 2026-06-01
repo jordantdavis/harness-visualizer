@@ -86,9 +86,9 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handleAPIHooks: GET /api/hooks — returns the shared hook metadata
-// registry (event.Hooks) so the web client renders lane events with the
-// same glyphs and labels the TUI uses.
+// handleAPIHooks: GET /api/hooks — returns the hook metadata registry
+// (event.Hooks) so the web client renders lane events with consistent
+// glyphs and labels.
 func (s *Server) handleAPIHooks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

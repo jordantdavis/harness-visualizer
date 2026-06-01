@@ -137,7 +137,7 @@ func (s *Store) Read(sessionID string, sinceSeq int64) ([]*event.Event, error) {
 	return out, sc.Err()
 }
 
-// SessionInfo summarizes one stored session for listing in the TUI.
+// SessionInfo summarizes one stored session for listing in the web UI.
 type SessionInfo struct {
 	// ID is the session's true SessionID (from the event payload), falling back
 	// to the sanitized filename stem for an empty file.

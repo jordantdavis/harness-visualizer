@@ -1,5 +1,5 @@
 // Package event defines the canonical event contract shared by the hook CLI,
-// the daemon, and the TUI. An Event is a small envelope of fields the
+// the daemon, and the web UI. An Event is a small envelope of fields the
 // visualizer owns plus the entire original Claude Code hook payload, kept
 // verbatim in Raw so new upstream fields never break us.
 package event
