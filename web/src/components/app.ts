@@ -18,8 +18,13 @@ export class App extends LitElement {
   @state() private detail?: OperationDetail
   @state() private daemonOk = false
   @state() private live = false
+  /** Refreshed every 30s to keep relative-time labels current. */
+  @state() private now: Date = new Date()
+  /** ISO timestamp of the currently selected timeline item (for inspector header). */
+  @state() private selectedAt?: string
 
   private stream = new StreamController(() => void this.refreshTimeline())
+  private nowTimer?: ReturnType<typeof setInterval>
 
   static styles = css`
     :host {
@@ -65,11 +70,13 @@ export class App extends LitElement {
     super.connectedCallback()
     void this.loadSessions()
     void loadHooks()
+    this.nowTimer = setInterval(() => { this.now = new Date() }, 30_000)
   }
 
   disconnectedCallback() {
     super.disconnectedCallback()
     this.stream.disconnect()
+    clearInterval(this.nowTimer)
   }
 
   private async loadSessions() {
@@ -85,6 +92,7 @@ export class App extends LitElement {
     this.selectedSessionId = id
     this.selectedOpId = ''
     this.detail = undefined
+    this.selectedAt = undefined
     await this.refreshTimeline()
     this.stream.connect(id)
     this.live = true
@@ -108,6 +116,13 @@ export class App extends LitElement {
   private async selectOp(opId: string) {
     if (!this.selectedSessionId) return
     this.selectedOpId = opId
+
+    // Capture the timestamp of the selected item for the inspector header.
+    const item = this.items.find(
+      (it) => it.kind === 'operation' && it.op?.id === opId,
+    )
+    this.selectedAt = item?.at
+
     try {
       this.detail = await api.operation(this.selectedSessionId, opId)
     } catch {
@@ -125,6 +140,7 @@ export class App extends LitElement {
             <hv-session-list
               .sessions=${this.sessions}
               .selectedId=${this.selectedSessionId}
+              .now=${this.now}
             ></hv-session-list>
           </div>
         </div>
@@ -140,7 +156,10 @@ export class App extends LitElement {
         <div class="pane">
           <div class="ptitle">inspector</div>
           <div class="body">
-            <hv-inspector .detail=${this.detail}></hv-inspector>
+            <hv-inspector
+              .detail=${this.detail}
+              .selectedAt=${this.selectedAt}
+            ></hv-inspector>
           </div>
         </div>
       </div>

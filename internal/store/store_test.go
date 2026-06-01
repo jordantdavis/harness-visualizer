@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
 )
@@ -234,6 +235,28 @@ func TestSessionsEmptyDirReturnsEmpty(t *testing.T) {
 	}
 	if len(infos) != 0 {
 		t.Errorf("got %d, want 0", len(infos))
+	}
+}
+
+// TestSessionsStartedAtIsFirstEventCapturedAt verifies that StartedAt reflects
+// the CapturedAt of the earliest event, not the second or later one.
+func TestSessionsStartedAtIsFirstEventCapturedAt(t *testing.T) {
+	s := newTestStore(t)
+	t1 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	t2 := t1.Add(5 * time.Second)
+
+	_ = s.Append(&event.Event{SessionID: "sess", HookEvent: "A", CapturedAt: t1})
+	_ = s.Append(&event.Event{SessionID: "sess", HookEvent: "B", CapturedAt: t2})
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(infos))
+	}
+	if !infos[0].StartedAt.Equal(t1) {
+		t.Errorf("StartedAt = %v, want %v (first event's CapturedAt)", infos[0].StartedAt, t1)
 	}
 }
 

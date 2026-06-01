@@ -2,8 +2,9 @@ import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { LaneEvent } from '../api/types'
 import { lookupHook } from '../api/hooks'
+import { formatClock, formatFull } from '../util/time'
 
-/** Single timeline lane-event row: glyph + label + gist. Glyph/label come
+/** Single timeline lane-event row: clock · glyph + label + gist. Glyph/label come
  *  from the shared hook registry (fetched by api/hooks.ts) so the TUI and
  *  web client cannot drift on rendering. */
 @customElement('hv-lane-event-row')
@@ -17,6 +18,13 @@ export class LaneEventRow extends LitElement {
       white-space: pre;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    .time {
+      display: inline-block;
+      width: 8ch;
+      color: var(--fg-faint);
+      margin-right: 1ch;
+      cursor: default;
     }
     .glyph { display: inline-block; width: 2ch; margin-right: 1ch; }
     .label { color: var(--accent); }
@@ -33,6 +41,7 @@ export class LaneEventRow extends LitElement {
     const gist = ev.gist || ev.hook_event
     const sev = ev.severity || meta.severity || 'info'
     return html`<div class="row sev-${sev}"
+      ><span class="time" title=${formatFull(ev.at)}>${formatClock(ev.at)}</span
       ><span class="glyph">${meta.glyph}</span
       ><span class="label">${meta.label}</span
       ><span class="gist">${gist}</span

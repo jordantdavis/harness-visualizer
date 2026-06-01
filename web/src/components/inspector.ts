@@ -1,6 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, property } from 'lit/decorators.js'
 import type { OperationDetail } from '../api/types'
+import { formatFull } from '../util/time'
 import './diff-view'
 import './code-view'
 import './raw-view'
@@ -8,6 +9,8 @@ import './raw-view'
 @customElement('hv-inspector')
 export class Inspector extends LitElement {
   @property({ attribute: false }) detail?: OperationDetail
+  /** ISO timestamp of the selected item; shown as full datetime in the header. */
+  @property() selectedAt?: string
 
   static styles = css`
     :host { display: block; height: 100%; overflow: auto; }
@@ -16,6 +19,11 @@ export class Inspector extends LitElement {
       color: var(--fg-dim);
       padding: 6px 10px;
       border-bottom: 1px solid var(--border);
+    }
+    .hdr-time {
+      color: var(--fg-faint);
+      font-size: 11px;
+      margin-top: 2px;
     }
     .section {
       color: var(--fg-faint);
@@ -29,8 +37,12 @@ export class Inspector extends LitElement {
   render() {
     const d = this.detail
     if (!d) return html`<div class="empty">Select an operation</div>`
+    const ts = formatFull(this.selectedAt ?? '')
     return html`
-      <div class="hdr">${d.tool}${d.file_path ? ` · ${d.file_path}` : ''}</div>
+      <div class="hdr">
+        <div>${d.tool}${d.file_path ? ` · ${d.file_path}` : ''}</div>
+        ${ts ? html`<div class="hdr-time">${ts}</div>` : ''}
+      </div>
       ${d.detail_kind === 'diff'
         ? html`<hv-diff-view .diff=${d.diff ?? []}></hv-diff-view>`
         : ''}

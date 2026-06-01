@@ -3,6 +3,8 @@ export interface SessionInfo {
   event_count: number
   last_seq: number
   mod_time: string
+  /** ISO 8601 timestamp of the first captured event. Empty string when unknown. */
+  started_at: string
   cwd?: string
   title?: string
 }
