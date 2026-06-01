@@ -1,6 +1,7 @@
 import { css, html, LitElement } from 'lit'
 import { customElement, state } from 'lit/decorators.js'
 import { api } from '../api/client'
+import { loadHooks } from '../api/hooks'
 import { StreamController } from '../api/stream'
 import type { OperationDetail, SessionInfo, TimelineItem } from '../api/types'
 import './top-bar'
@@ -63,6 +64,7 @@ export class App extends LitElement {
   connectedCallback() {
     super.connectedCallback()
     void this.loadSessions()
+    void loadHooks()
   }
 
   disconnectedCallback() {
