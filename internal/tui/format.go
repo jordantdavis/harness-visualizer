@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 	"jordandavis.dev/harness-visualizer/internal/store"
 )
 
@@ -74,18 +75,25 @@ func statusGlyphStyled(s eventStatus, noColor bool, tok tokens) string {
 }
 
 // deriveStatus inspects the event's promoted fields and Raw to determine status.
-// Defensive: any parse failure yields statusNeutral.
+// Defensive: nil ev yields statusNeutral; any parse failure yields statusNeutral.
 func deriveStatus(ev *event.Event) eventStatus {
-	hook := ev.HookEvent
-	switch hook {
+	if ev == nil {
+		return statusNeutral
+	}
+	switch ev.HookEvent {
 	case "PreToolUse":
 		return statusRunning
 	case "PostToolUse":
 		return derivePostStatus(ev.Raw)
-	case "Stop", "SubagentStop", "SessionEnd":
-		return statusNeutral
-	case "SessionStart", "UserPromptSubmit", "Notification", "PreCompact":
-		return statusNeutral
+	case "PostToolUseFailure":
+		return statusError
+	case "SubagentStop":
+		if hooks.SubagentHasError(ev.Raw) {
+			return statusError
+		}
+		return statusOK
+	case "PostCompact":
+		return statusOK
 	default:
 		return statusNeutral
 	}
