@@ -207,23 +207,63 @@ func TestDisplayRowStatusRunningWhenNoPost(t *testing.T) {
 	}
 }
 
-func TestExtractToolUseIDTopLevel(t *testing.T) {
-	raw := json.RawMessage(`{"tool_use_id":"abc-123"}`)
-	if got := extractToolUseID(raw); got != "abc-123" {
-		t.Errorf("top-level tool_use_id = %q, want abc-123", got)
+func TestPairToolUseWithFailure(t *testing.T) {
+	pre := makeEv("e1", 1, "PreToolUse", "Bash", "s1", t0, `{"tool_use_id":"u1"}`)
+	post := makeEv("e2", 2, "PostToolUseFailure", "Bash", "s1", t1, `{"tool_use_id":"u1","error":"boom"}`)
+
+	rows := buildDisplayRows([]*event.Event{pre, post})
+	if len(rows) != 1 {
+		t.Fatalf("want 1 paired row, got %d", len(rows))
+	}
+	if !rows[0].IsPair {
+		t.Fatal("row should pair Pre with PostToolUseFailure")
+	}
+	if rows[0].EffectiveStatus() != statusError {
+		t.Errorf("EffectiveStatus = %v, want statusError", rows[0].EffectiveStatus())
 	}
 }
 
-func TestExtractToolUseIDAbsent(t *testing.T) {
-	raw := json.RawMessage(`{"something_else":"x"}`)
-	if got := extractToolUseID(raw); got != "" {
-		t.Errorf("absent tool_use_id should return \"\", got %q", got)
+func TestPairSubagent(t *testing.T) {
+	pre := makeEv("e1", 1, "SubagentStart", "", "s1", t0, `{"subagent_id":"sa-1"}`)
+	post := makeEv("e2", 2, "SubagentStop", "", "s1", t1, `{"subagent_id":"sa-1"}`)
+
+	rows := buildDisplayRows([]*event.Event{pre, post})
+	if len(rows) != 1 {
+		t.Fatalf("want 1 paired row, got %d", len(rows))
+	}
+	if !rows[0].IsPair {
+		t.Fatal("subagent row should pair")
+	}
+	if rows[0].EffectiveStatus() != statusOK {
+		t.Errorf("EffectiveStatus = %v, want statusOK", rows[0].EffectiveStatus())
 	}
 }
 
-func TestExtractToolUseIDMalformed(t *testing.T) {
-	raw := json.RawMessage(`not json`)
-	if got := extractToolUseID(raw); got != "" {
-		t.Errorf("malformed JSON should return \"\", got %q", got)
+func TestPairCompact(t *testing.T) {
+	pre := makeEv("e1", 1, "PreCompact", "", "s1", t0, `{"compact_id":"c-1"}`)
+	post := makeEv("e2", 2, "PostCompact", "", "s1", t1, `{"compact_id":"c-1"}`)
+
+	rows := buildDisplayRows([]*event.Event{pre, post})
+	if len(rows) != 1 {
+		t.Fatalf("want 1 paired row, got %d", len(rows))
+	}
+	if !rows[0].IsPair {
+		t.Fatal("compact row should pair")
+	}
+}
+
+func TestPairCrossKindIsolation(t *testing.T) {
+	// SubagentStop must not close a PreCompact even without IDs.
+	pre := makeEv("e1", 1, "PreCompact", "", "s1", t0, `{}`)
+	post := makeEv("e2", 2, "SubagentStop", "", "s1", t1, `{}`)
+
+	rows := buildDisplayRows([]*event.Event{pre, post})
+	if len(rows) != 2 {
+		t.Fatalf("want 2 standalone rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.IsPair {
+			t.Error("cross-kind pairing must not happen")
+		}
 	}
 }

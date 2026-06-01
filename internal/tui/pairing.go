@@ -1,37 +1,34 @@
 // Package tui — pairing.go
 //
-// Pairs PreToolUse events with their PostToolUse counterparts to produce
-// display rows for the folded op view. Pairing is pure (no I/O, no state):
-// given a sorted event slice it returns a slice of displayRows in chronological
-// order that can be fed directly to the events pane renderer.
+// Pairs Pre/Post events for tool, subagent, and compact kinds and renders them
+// as folded display rows for the events pane. Pairing is pure: given a sorted
+// event slice it returns a slice of displayRows in chronological order.
 //
-// Pairing strategy (in priority order):
-//  1. Stable ID: both Pre and Post carry the same "tool_use_id" in their Raw
-//     payload (looked up at the top level). This is the preferred, exact match.
-//  2. Heuristic fallback: the first unclaimed PostToolUse with the same ToolName
-//     that appears after the PreToolUse in Seq order.
+// For each kind:
+//  1. Stable ID match (per-kind id extractor).
+//  2. Heuristic: first unclaimed Post of the same kind (same ToolName for the
+//     tool kind) with a later Seq.
 //
-// Unpaired Pres (still running) and standalone lifecycle events (SessionStart,
-// SessionEnd, UserPromptSubmit, Notification, Stop, …) each become a single
-// standalone displayRow.
+// Cross-kind pairing never happens.
 package tui
 
 import (
-	"encoding/json"
 	"time"
 
 	"jordandavis.dev/harness-visualizer/internal/event"
+	"jordandavis.dev/harness-visualizer/internal/source/claudecode/hooks"
 )
 
 // displayRow is one row in the events pane. It is either a folded paired op
 // (IsPair == true, both Pre and Post set) or a standalone event (IsPair ==
 // false, only Pre set — Post is nil).
 type displayRow struct {
-	// Pre is the primary event. For a paired op this is the PreToolUse; for a
-	// standalone row it is the single event (lifecycle, unpaired Pre, etc.).
+	// Pre is the primary event. For a paired op this is the pre-event (e.g.
+	// PreToolUse, SubagentStart, PreCompact); for a standalone row it is the
+	// single event (lifecycle, unpaired Pre, etc.).
 	Pre *event.Event
 
-	// Post is the PostToolUse event for a paired op; nil for standalone rows.
+	// Post is the post-event for a paired op; nil for standalone rows.
 	Post *event.Event
 
 	// IsPair is true when Pre and Post are matched.
@@ -61,74 +58,130 @@ type rowAnchor struct {
 	row displayRow
 }
 
+// pairSpec describes one pairable kind (tool, subagent, compact).
+//
+//   - pre:   the hook event name for the pre-event.
+//   - posts: the set of hook event names that close the pre.
+//   - id:    extracts the stable pairing ID from a Raw payload; returns "" if absent.
+//   - key:   secondary grouping key used for the heuristic fallback (same-kind
+//     bucket). For tool it encodes ToolName; for subagent/compact it is a constant.
+type pairSpec struct {
+	pre   string
+	posts map[string]bool
+	id    func(raw []byte) string
+	key   func(ev *event.Event) string
+}
+
+func toolSpec() pairSpec {
+	return pairSpec{
+		pre:   "PreToolUse",
+		posts: map[string]bool{"PostToolUse": true, "PostToolUseFailure": true},
+		id:    func(raw []byte) string { return hooks.ToolUseID(raw) },
+		// key returns "" when ToolName is absent — a "" key disables the
+		// heuristic fallback (matching by tool name requires a non-empty name).
+		key: func(ev *event.Event) string { return ev.ToolName },
+	}
+}
+
+func subagentSpec() pairSpec {
+	return pairSpec{
+		pre:   "SubagentStart",
+		posts: map[string]bool{"SubagentStop": true},
+		id:    func(raw []byte) string { return hooks.SubagentID(raw) },
+		key:   func(*event.Event) string { return "subagent" },
+	}
+}
+
+func compactSpec() pairSpec {
+	return pairSpec{
+		pre:   "PreCompact",
+		posts: map[string]bool{"PostCompact": true},
+		id:    func(raw []byte) string { return hooks.CompactID(raw) },
+		key:   func(*event.Event) string { return "compact" },
+	}
+}
+
 // buildDisplayRows pairs events and returns them as display rows in
 // chronological (Seq) order. Input must already be sorted ascending by Seq.
 //
-// Events outside the pairable set (not PreToolUse or PostToolUse) are always
-// standalone. PreToolUse events without a matching Post are standalone (running).
+// Pre-events without a matching Post are emitted as standalone (still-running)
+// rows. Unclaimed Post events are emitted as standalone rows anchored at their
+// own Seq. All other events (lifecycle, unknown) are standalone.
 func buildDisplayRows(events []*event.Event) []displayRow {
-	// Phase 1: collect all PostToolUse events into indexed slots for pairing.
-	//
-	// We pre-scan Posts so that Pres can claim them in a single forward pass,
-	// regardless of whether the matching Post appears later in the stream.
+	specs := []pairSpec{toolSpec(), subagentSpec(), compactSpec()}
 
+	// Pre-scan: index all Post events into per-spec slot tables.
 	type slot struct {
 		ev      *event.Event
 		claimed bool
 	}
+	specPosts := make([][]slot, len(specs))
+	postByID := make([]map[string]int, len(specs))
+	postByKey := make([]map[string][]int, len(specs))
 
-	// postByID: tool_use_id → slot index into postSlots
-	postByID := make(map[string]int)
-	// postByTool: ToolName → ordered slot indices (for heuristic)
-	postByTool := make(map[string][]int)
-	var postSlots []slot
-
-	for _, ev := range events {
-		if ev.HookEvent != "PostToolUse" {
-			continue
-		}
-		idx := len(postSlots)
-		postSlots = append(postSlots, slot{ev: ev})
-		if id := extractToolUseID(ev.Raw); id != "" {
-			postByID[id] = idx
-		}
-		if ev.ToolName != "" {
-			postByTool[ev.ToolName] = append(postByTool[ev.ToolName], idx)
+	for i, sp := range specs {
+		postByID[i] = map[string]int{}
+		postByKey[i] = map[string][]int{}
+		for _, ev := range events {
+			if !sp.posts[ev.HookEvent] {
+				continue
+			}
+			idx := len(specPosts[i])
+			specPosts[i] = append(specPosts[i], slot{ev: ev})
+			if id := sp.id(ev.Raw); id != "" {
+				if _, exists := postByID[i][id]; !exists {
+					postByID[i][id] = idx
+				}
+			}
+			if k := sp.key(ev); k != "" {
+				postByKey[i][k] = append(postByKey[i][k], idx)
+			}
 		}
 	}
 
-	// Phase 2: walk events in order, pairing Pres greedily.
-	//
-	// The anchor position of a paired row is the Pre's Seq so the row sorts
-	// to where the op started.
-
 	var anchors []rowAnchor
 
+	// Forward pass: emit a row for each pre-event (paired or standalone) and
+	// for each lifecycle/unknown event.
 	for _, ev := range events {
-		switch ev.HookEvent {
-		case "PreToolUse":
+		specIdx := -1
+		for i, sp := range specs {
+			if ev.HookEvent == sp.pre {
+				specIdx = i
+				break
+			}
+		}
+
+		switch {
+		case specIdx >= 0:
+			// Pre-event: attempt to claim a matching Post.
+			sp := specs[specIdx]
 			row := displayRow{Pre: ev}
-			// Attempt pairing: prefer stable ID, then heuristic.
-			preID := extractToolUseID(ev.Raw)
+			preID := sp.id(ev.Raw)
 			var post *event.Event
 
+			// Prefer stable ID match.
 			if preID != "" {
-				if idx, ok := postByID[preID]; ok && !postSlots[idx].claimed {
-					postSlots[idx].claimed = true
-					post = postSlots[idx].ev
+				if idx, ok := postByID[specIdx][preID]; ok && !specPosts[specIdx][idx].claimed {
+					specPosts[specIdx][idx].claimed = true
+					post = specPosts[specIdx][idx].ev
 				}
 			}
-			if post == nil && ev.ToolName != "" {
-				// Heuristic: first unclaimed Post of same tool after this Pre.
-				for _, idx := range postByTool[ev.ToolName] {
-					if !postSlots[idx].claimed && postSlots[idx].ev.Seq > ev.Seq {
-						postSlots[idx].claimed = true
-						post = postSlots[idx].ev
-						break
+			// Heuristic fallback: first unclaimed same-key Post with higher Seq.
+			// A blank key (e.g. PreToolUse with no ToolName) disables this path
+			// to avoid spurious pairings between unrelated events.
+			if post == nil {
+				if k := sp.key(ev); k != "" {
+					for _, idx := range postByKey[specIdx][k] {
+						s := &specPosts[specIdx][idx]
+						if !s.claimed && s.ev.Seq > ev.Seq {
+							s.claimed = true
+							post = s.ev
+							break
+						}
 					}
 				}
 			}
-
 			if post != nil {
 				row.Post = post
 				row.IsPair = true
@@ -136,26 +189,26 @@ func buildDisplayRows(events []*event.Event) []displayRow {
 			}
 			anchors = append(anchors, rowAnchor{seq: ev.Seq, row: row})
 
-		case "PostToolUse":
-			// Posts are consumed during Pre processing. Unclaimed Posts are
-			// added as standalone rows in Phase 3 below.
-
 		default:
-			// Lifecycle / other events are always standalone.
+			// Post events are consumed during pre processing; skip here.
+			// Lifecycle and unknown events are standalone.
+			if isAnyPost(specs, ev.HookEvent) {
+				continue
+			}
 			anchors = append(anchors, rowAnchor{seq: ev.Seq, row: displayRow{Pre: ev}})
 		}
 	}
 
-	// Phase 3: add unclaimed Post events as standalone rows.
-	for _, s := range postSlots {
-		if !s.claimed {
-			anchors = append(anchors, rowAnchor{seq: s.ev.Seq, row: displayRow{Pre: s.ev}})
+	// Add unclaimed Post events as standalone rows.
+	for i := range specs {
+		for _, s := range specPosts[i] {
+			if !s.claimed {
+				anchors = append(anchors, rowAnchor{seq: s.ev.Seq, row: displayRow{Pre: s.ev}})
+			}
 		}
 	}
 
-	// Phase 4: sort anchors by Seq to restore chronological order.
 	sortRowAnchors(anchors)
-
 	out := make([]displayRow, len(anchors))
 	for i, a := range anchors {
 		out[i] = a.row
@@ -163,19 +216,14 @@ func buildDisplayRows(events []*event.Event) []displayRow {
 	return out
 }
 
-// extractToolUseID looks for "tool_use_id" at the top level of raw JSON.
-// Returns "" on any error or absence.
-func extractToolUseID(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
+// isAnyPost reports whether hook is a Post event name for any known spec.
+func isAnyPost(specs []pairSpec, hook string) bool {
+	for _, sp := range specs {
+		if sp.posts[hook] {
+			return true
+		}
 	}
-	var wrapper struct {
-		ToolUseID string `json:"tool_use_id"`
-	}
-	if err := json.Unmarshal(raw, &wrapper); err != nil {
-		return ""
-	}
-	return wrapper.ToolUseID
+	return false
 }
 
 // sortRowAnchors sorts a slice of rowAnchor by Seq ascending (insertion sort —
