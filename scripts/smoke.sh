@@ -101,6 +101,47 @@ sleep 0.3
 pass "hook 3 (PostToolUseFailure posted)"
 
 # ---------------------------------------------------------------------------
+# Step 4c — PR 3 lane-event hooks (one sample payload each)
+# ---------------------------------------------------------------------------
+printf '==> sending lane-event hook payloads (11 events)\n'
+
+printf '{"hook_event_name":"PermissionRequest","session_id":"smoke-test","tool_name":"Bash","tool_input":{"command":"echo hi"}}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"PermissionDenied","session_id":"smoke-test","tool_name":"Edit","tool_input":{"file_path":"foo.go"},"reason":"sandbox"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"InstructionsLoaded","session_id":"smoke-test","path":"CLAUDE.md","memory_type":"project"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"ConfigChange","session_id":"smoke-test","key":"model","old_value":"opus","new_value":"sonnet"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"CwdChanged","session_id":"smoke-test","old_cwd":"/a","new_cwd":"/a/web"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"TaskCreated","session_id":"smoke-test","task_id":"42","subject":"Run baseline"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"TaskCompleted","session_id":"smoke-test","task_id":"42","subject":"Run baseline","status":"completed"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"UserPromptExpansion","session_id":"smoke-test","original":"/loop","expanded":"run baseline"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"MessageDisplay","session_id":"smoke-test","text":"hello"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"WorktreeRemove","session_id":"smoke-test","name":"feature-x","path":"/w/feature-x"}' \
+  | "$BIN" hook
+
+printf '{"hook_event_name":"StopFailure","session_id":"smoke-test","error_type":"rate_limit","message":"slow down"}' \
+  | "$BIN" hook
+
+sleep 0.5
+pass "hooks 4-14 (11 lane-event payloads posted)"
+
+# ---------------------------------------------------------------------------
 # Step 5 — Assert JSONL exists and contains the events
 # ---------------------------------------------------------------------------
 SESSION_FILE="$DATA_DIR/sessions/smoke-test.jsonl"
@@ -123,6 +164,15 @@ pass "tool_name captured in JSONL"
 grep -q '"hook_event":"PostToolUseFailure"' "$SESSION_FILE" \
   || fail "hook_event PostToolUseFailure not found in JSONL"
 pass "PostToolUseFailure captured in JSONL"
+
+for hook in \
+  PermissionRequest PermissionDenied InstructionsLoaded ConfigChange CwdChanged \
+  TaskCreated TaskCompleted UserPromptExpansion MessageDisplay WorktreeRemove StopFailure
+do
+  grep -q "\"hook_event\":\"$hook\"" "$SESSION_FILE" \
+    || fail "lane event $hook not found in JSONL"
+  pass "lane event $hook captured in JSONL"
+done
 
 # ---------------------------------------------------------------------------
 # Done
