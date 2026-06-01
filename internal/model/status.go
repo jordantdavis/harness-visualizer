@@ -25,14 +25,17 @@ const (
 )
 
 // DeriveStatus inspects a single event. PreToolUse is running; PostToolUse is
-// resolved from tool_response.exit_code; everything else is neutral. Any parse
-// failure yields StatusNeutral.
+// resolved from tool_response.exit_code; PostToolUseFailure is always error
+// (the event name is the signal — no payload inspection needed); everything
+// else is neutral. Any parse failure yields StatusNeutral.
 func DeriveStatus(ev *event.Event) Status {
 	switch ev.HookEvent {
 	case "PreToolUse":
 		return StatusRunning
 	case "PostToolUse":
 		return postStatus(ev.Raw)
+	case "PostToolUseFailure":
+		return StatusError
 	default:
 		return StatusNeutral
 	}

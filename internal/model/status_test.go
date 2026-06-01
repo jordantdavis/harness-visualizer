@@ -19,6 +19,8 @@ func TestDeriveStatus(t *testing.T) {
 		{"post without exit code is neutral", &event.Event{HookEvent: "PostToolUse", Raw: []byte(`{"tool_response":{}}`)}, StatusNeutral},
 		{"lifecycle is neutral", &event.Event{HookEvent: "SessionStart"}, StatusNeutral},
 		{"malformed raw is neutral", &event.Event{HookEvent: "PostToolUse", Raw: []byte(`not json`)}, StatusNeutral},
+		{"post failure is error", &event.Event{HookEvent: "PostToolUseFailure"}, StatusError},
+		{"post failure ignores raw", &event.Event{HookEvent: "PostToolUseFailure", Raw: []byte(`{"tool_response":{"exit_code":0}}`)}, StatusError},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
