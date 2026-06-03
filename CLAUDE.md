@@ -21,6 +21,11 @@ make test         # Go tests (fast, no Node) — `go test ./...`
 make test-web     # frontend unit tests (vitest)
 make clean        # remove binary + dist, recreate dist/.gitkeep
 
+make ci           # reproduce the full CI pipeline locally (ci-go + ci-web)
+make ci-go        # Go gate: fmt-check, vet, test, go-build
+make ci-web       # web gate: web-deps, web-build, web-test
+make fmt          # gofmt -w all tracked Go files (fmt-check is the CI gate)
+
 go test ./internal/model/...                 # one package
 go test ./internal/daemon/ -run TestName     # one test
 cd web && npm run test                       # vitest directly (npx vitest run path/to.test.ts for one file)

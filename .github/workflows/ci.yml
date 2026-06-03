@@ -15,6 +15,9 @@ concurrency:
 permissions:
   contents: read
 
+# CI delegates to Makefile targets so the commands are a single source of truth
+# shared with local dev (`make ci-go` / `make ci-web`). Toolchain setup and
+# dependency caching stay here, where the runner manages them.
 jobs:
   go:
     name: Go (CLI)
@@ -28,34 +31,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Verify formatting (gofmt)
-        run: |
-          unformatted=$(git ls-files '*.go' | xargs gofmt -l)
-          if [ -n "$unformatted" ]; then
-            echo "These files are not gofmt-clean:" >&2
-            echo "$unformatted" >&2
-            echo "Run: git ls-files '*.go' | xargs gofmt -w" >&2
-            exit 1
-          fi
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./...
-
-      # Build with whatever is currently embedded in internal/web/dist
-      # (the tracked .gitkeep is enough for go:embed); the real bundle is
-      # produced by `make build`, exercised by the web job below.
-      - name: Build
-        run: go build ./cmd/hv
+      # fmt-check, vet, go test ./..., go build ./cmd/hv
+      - name: Go checks
+        run: make ci-go
 
   web:
     name: Web (frontend)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
     steps:
       - uses: actions/checkout@v4
 
@@ -66,12 +48,6 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-
-      # `npm run build` runs `tsc --noEmit` (typecheck) then `vite build`.
-      - name: Build
-        run: npm run build
-
-      - name: Test
-        run: npm run test
+      # npm ci, npm run build (tsc + vite), npm run test (vitest)
+      - name: Web checks
+        run: make ci-web
