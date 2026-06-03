@@ -12,8 +12,8 @@ func TestMergeTimeline_OrdersByTimeThenSeq(t *testing.T) {
 		{ID: "a", Tool: "Edit", Seq: 2, StartedAt: base.Add(1 * time.Second)},
 	}
 	turns := []Turn{
-		{Role: "user", Text: "do the thing", At: base},                    // before the op
-		{Role: "assistant", Text: "done", At: base.Add(2 * time.Second)},  // after the op
+		{Role: "user", Text: "do the thing", At: base},                   // before the op
+		{Role: "assistant", Text: "done", At: base.Add(2 * time.Second)}, // after the op
 	}
 	items := MergeTimeline(ops, turns, nil)
 	if len(items) != 3 {

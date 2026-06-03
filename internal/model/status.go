@@ -26,12 +26,13 @@ const (
 )
 
 // DeriveStatus inspects a single event to derive its lifecycle status.
-//   PreToolUse                       → StatusRunning
-//   PostToolUse                      → from tool_response.exit_code
-//   PostToolUseFailure               → StatusError
-//   SubagentStop                     → StatusError if .error present, else StatusSuccess
-//   PostCompact                      → StatusSuccess
-//   anything else                    → StatusNeutral
+//
+//	PreToolUse                       → StatusRunning
+//	PostToolUse                      → from tool_response.exit_code
+//	PostToolUseFailure               → StatusError
+//	SubagentStop                     → StatusError if .error present, else StatusSuccess
+//	PostCompact                      → StatusSuccess
+//	anything else                    → StatusNeutral
 //
 // Parse failures fall through to StatusNeutral.
 func DeriveStatus(ev *event.Event) Status {

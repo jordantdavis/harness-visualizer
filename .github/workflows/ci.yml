@@ -1,0 +1,53 @@
+name: CI
+
+# Run on PRs targeting main and on merges/pushes into main.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs for the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# CI delegates to Makefile targets so the commands are a single source of truth
+# shared with local dev (`make ci-go` / `make ci-web`). Toolchain setup and
+# dependency caching stay here, where the runner manages them.
+jobs:
+  go:
+    name: Go (CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # fmt-check, vet, go test ./..., go build ./cmd/hv
+      - name: Go checks
+        run: make ci-go
+
+  web:
+    name: Web (frontend)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # npm ci, npm run build (tsc + vite), npm run test (vitest)
+      - name: Web checks
+        run: make ci-web

@@ -28,7 +28,7 @@ import (
 const (
 	defaultPort      = 7842
 	maxBodyBytes     = 10 * 1024 * 1024 // 10 MB
-	writerBuf        = 256               // per-session inbound channel capacity
+	writerBuf        = 256              // per-session inbound channel capacity
 	subBuf           = 64               // per-SSE-subscriber outbound channel capacity
 	heartbeatPeriod  = 15 * time.Second
 	writerFlushDelay = 250 * time.Millisecond
