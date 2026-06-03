@@ -38,6 +38,15 @@ export class SessionList extends LitElement {
     return s.id.slice(0, 8)
   }
 
+  /**
+   * Timestamp shown as the row's age — the server's sort key (last activity),
+   * falling back to mod_time when no event carried a timestamp. Mirrors the
+   * daemon's effectiveActivity ordering so the label matches the list order.
+   */
+  private activity(s: SessionInfo): string {
+    return s.last_activity || s.mod_time
+  }
+
   render() {
     return html`<div class="list">
       ${this.sessions.map(
@@ -48,8 +57,8 @@ export class SessionList extends LitElement {
           <div class="proj">${this.project(s)}</div>
           <div class="meta">
             ${s.event_count} ev · ${s.id.slice(0, 8)} ·
-            <span class="age" title=${formatFull(s.mod_time)}
-              >${formatRelative(s.mod_time, this.now)}</span
+            <span class="age" title=${formatFull(this.activity(s))}
+              >${formatRelative(this.activity(s), this.now)}</span
             >
           </div>
         </div>`,
