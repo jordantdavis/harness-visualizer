@@ -24,8 +24,7 @@ Manage the local capture daemon (Unix only).
 Commands:
   start      run the HTTP server in the foreground (this is the process the
              hook auto-spawn runs detached). Hard-refuses (exit 1) if a healthy
-             daemon already owns the port. Flags: --port (default 7842),
-             --foreground (accepted, ignored).
+             daemon already owns the port. Flag: --port (default 7842).
   stop       SIGTERM the running daemon and wait for graceful exit (SIGKILL
              fallback). Hard-refuses (exit 1) if nothing is running.
   restart    stop the running daemon (tolerating "not running"), then spawn a
@@ -107,8 +106,8 @@ func (l *lifecycle) dispatch(args []string) int {
 }
 
 // start runs the foreground server, refusing first if a healthy daemon already
-// owns the port. --foreground is accepted for back-compat and ignored (detach
-// is always the caller's job).
+// owns the port. Detachment is always the caller's job (the hook CLI's Setsid
+// spawn), never ours.
 //
 // Two refuse checks, both grounded in real ports (never the default-port
 // fallback): the recorded daemon (port file), which catches an instance on a
@@ -119,11 +118,9 @@ func (l *lifecycle) start(args []string) int {
 	fs := flag.NewFlagSet("daemon start", flag.ContinueOnError)
 	fs.SetOutput(l.errw)
 	port := fs.Int("port", defaultPort, "preferred listen port")
-	foreground := fs.Bool("foreground", true, "run in foreground (accepted; ignored)")
 	if err := fs.Parse(args); err != nil {
 		return 1
 	}
-	_ = foreground // detach is the caller's responsibility, never ours
 
 	if addr, ok := l.recordedAddr(); ok && l.healthy(addr) {
 		fmt.Fprintf(l.out, "daemon already running at %s\n", daemonURL(addr))

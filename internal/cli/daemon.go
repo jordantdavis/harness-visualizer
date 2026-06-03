@@ -38,10 +38,7 @@ func newDaemonCmd() *cobra.Command {
 		},
 	}
 
-	var (
-		port       int
-		foreground bool
-	)
+	var port int
 	startCmd := &cobra.Command{
 		Use:   "start",
 		Short: "Run the capture server in the foreground (auto-spawned by hooks)",
@@ -53,16 +50,11 @@ func newDaemonCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fwd := []string{
-				"start",
-				fmt.Sprintf("--port=%d", port),
-				fmt.Sprintf("--foreground=%t", foreground),
-			}
+			fwd := []string{"start", fmt.Sprintf("--port=%d", port)}
 			return codeErr(daemonRun(fwd))
 		},
 	}
 	startCmd.Flags().IntVar(&port, "port", defaultPort, "preferred listen port")
-	startCmd.Flags().BoolVar(&foreground, "foreground", true, "run in foreground (accepted; ignored)")
 
 	stopCmd := &cobra.Command{
 		Use:           "stop",

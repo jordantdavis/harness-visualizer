@@ -58,7 +58,7 @@ own failure modes (flag parsing, init panics) can never break the per-event path
 - **`hv daemon <verb>`** (`internal/daemon`) — long-running HTTP capture server + SSE hub plus
   its lifecycle commands. Receives events via POST, persists via a per-session writer goroutine
   (`internal/store`), and fans out live to SSE subscribers (`hub`). `Run` is a verb dispatcher
-  (`lifecycle.go`) over `start` (the in-process foreground server, `--port`/`--foreground`;
+  (`lifecycle.go`) over `start` (the in-process foreground server, `--port`;
   hard-refuses if a healthy daemon already owns the port — no `:0` fallback), `stop`
   (SIGTERM→SIGKILL the pidfile PID), `restart` (tolerant stop + detached re-spawn + poll), and
   `status` (pid/port/url, exit 0/1). Liveness is `GET /healthz` against the **port-file** port,

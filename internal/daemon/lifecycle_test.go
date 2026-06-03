@@ -155,16 +155,6 @@ func TestStartServesWhenNotHealthy(t *testing.T) {
 	}
 }
 
-func TestStartForegroundFlagAccepted(t *testing.T) {
-	f := newFixture(t)
-	if code := f.lc.dispatch([]string{"start", "--foreground=true", "--port=7842"}); code != 0 {
-		t.Fatalf("start --foreground exit = %d, want 0", code)
-	}
-	if f.serveCalls != 1 {
-		t.Errorf("serve not called; --foreground may have broken parsing")
-	}
-}
-
 // TestStartRefusesWhenExactPortHealthy covers the case with no port file but a
 // foreign daemon already on the requested port: the exact-port check refuses.
 func TestStartRefusesWhenExactPortHealthy(t *testing.T) {
