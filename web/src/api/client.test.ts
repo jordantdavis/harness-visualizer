@@ -25,4 +25,17 @@ describe('api client', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('nope', { status: 500 }))
     await expect(api.operation('s', 'x')).rejects.toThrow()
   })
+
+  it('deletes a session with DELETE and an encoded id', async () => {
+    const spy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(null, { status: 204 }))
+    await expect(api.deleteSession('s 1')).resolves.toBeUndefined()
+    expect(spy).toHaveBeenCalledWith('/api/sessions/s%201', { method: 'DELETE' })
+  })
+
+  it('throws when deleteSession gets a non-ok response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('boom', { status: 500 }))
+    await expect(api.deleteSession('s1')).rejects.toThrow()
+  })
 })

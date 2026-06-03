@@ -3,6 +3,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -30,15 +31,26 @@ func (s *Server) handleAPISessions(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, infos)
 }
 
-// handleAPISession routes GET /api/sessions/{id}/timeline and
-// GET /api/sessions/{id}/operations/{opID}.
+// handleAPISession routes the /api/sessions/{id} subtree:
+//   - DELETE /api/sessions/{id}           -> remove a single captured session
+//   - GET    /api/sessions/{id}/timeline
+//   - GET    /api/sessions/{id}/operations/{opID}
+//
+// The bare-id path (no sub-resource) is the mutation surface: only DELETE is
+// meaningful there. Sub-resources remain read-only GETs.
 func (s *Server) handleAPISession(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
+	id, tail, _ := strings.Cut(rest, "/")
+
+	if tail == "" {
+		s.handleAPISessionDelete(w, r, id)
+		return
+	}
+
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	rest := strings.TrimPrefix(r.URL.Path, "/api/sessions/")
-	id, tail, _ := strings.Cut(rest, "/")
 	switch {
 	case tail == "timeline":
 		s.handleAPITimeline(w, r, id)
@@ -47,6 +59,25 @@ func (s *Server) handleAPISession(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// handleAPISessionDelete handles DELETE /api/sessions/{id}. This is a local
+// mutation of local data — the daemon stays 127.0.0.1-only with no auth, so no
+// new exposure is introduced. Idempotent: a missing session still returns 204.
+func (s *Server) handleAPISessionDelete(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.st.Delete(id); err != nil {
+		if errors.Is(err, store.ErrInvalidSessionID) {
+			http.Error(w, "invalid session id", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleAPITimeline builds the merged, interleaved timeline for a session.

@@ -97,6 +97,28 @@ func SessionFile(sessionID string) (string, error) {
 	return filepath.Join(dir, SessionFilename(sessionID)), nil
 }
 
+// SafeSessionID reports whether id is safe to use verbatim as a session
+// filename stem: non-empty and composed only of the characters sanitize
+// preserves (ASCII letters, digits, '-', '_'). Ids that sanitization would
+// rewrite (slashes, dots, traversal sequences, unicode) are rejected so a
+// mutating caller can refuse the request rather than act on a surprising,
+// possibly-colliding path. Read paths that already tolerate foreign data may
+// continue to use SessionFilename directly; deletes should gate on this first.
+func SafeSessionID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z',
+			r >= '0' && r <= '9', r == '-', r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // sanitize maps a session id to a safe filename component. It keeps ASCII
 // letters, digits, '-' and '_', replacing everything else with '_'. An empty
 // input returns "_" so a filename always has at least one character.

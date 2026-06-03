@@ -13,7 +13,8 @@ export class SessionList extends LitElement {
   static styles = css`
     :host { display: block; height: 100%; overflow: auto; }
     .row {
-      padding: 3px 10px;
+      position: relative;
+      padding: 3px 28px 3px 10px;
       cursor: pointer;
       border-left: 2px solid transparent;
     }
@@ -24,11 +25,41 @@ export class SessionList extends LitElement {
     .proj { color: var(--fg); }
     .meta { color: var(--fg-dim); font-size: 11px; }
     .age { cursor: default; }
+    .del {
+      position: absolute;
+      top: 50%;
+      right: 6px;
+      transform: translateY(-50%);
+      padding: 0 4px;
+      border: none;
+      background: transparent;
+      color: var(--fg-dim);
+      font: inherit;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 3px;
+      opacity: 0;
+    }
+    .row:hover .del,
+    .del:focus { opacity: 1; }
+    .del:hover { color: var(--fg); background: var(--sel-bg-foc); }
   `
 
   private pick(id: string) {
     this.dispatchEvent(
       new CustomEvent('select-session', { detail: id, bubbles: true, composed: true }),
+    )
+  }
+
+  private requestDelete(e: Event, s: SessionInfo) {
+    // Keep the row's click (select-session) from also firing.
+    e.stopPropagation()
+    const label = this.project(s)
+    if (!confirm(`Delete session "${label}"? This removes its captured events.`)) {
+      return
+    }
+    this.dispatchEvent(
+      new CustomEvent('delete-session', { detail: s.id, bubbles: true, composed: true }),
     )
   }
 
@@ -61,6 +92,15 @@ export class SessionList extends LitElement {
               >${formatRelative(this.activity(s), this.now)}</span
             >
           </div>
+          <button
+            class="del"
+            type="button"
+            aria-label=${`Delete session ${this.project(s)}`}
+            title="Delete session"
+            @click=${(e: Event) => this.requestDelete(e, s)}
+          >
+            ×
+          </button>
         </div>`,
       )}
     </div>`
