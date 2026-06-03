@@ -11,7 +11,8 @@ export class SessionList extends LitElement {
   @property({ attribute: false }) now: Date = new Date()
 
   static styles = css`
-    :host { display: block; height: 100%; overflow: auto; }
+    /* The enclosing column .body owns scroll; this host just flows. */
+    :host { display: block; }
     .row {
       position: relative;
       padding: 3px 28px 3px 10px;

@@ -28,4 +28,8 @@ html, body {
   font-variant-ligatures: none;
 }
 
-hv-app { display: block; height: 100vh; }
+/* Size the host, but do NOT set `display` here: a document rule on the host
+   overrides the shadow `:host` rule, so setting `display: block` would defeat
+   `:host { display: grid }` and collapse the columns into one scrolling page.
+   The component owns its own layout via `:host`. */
+hv-app { height: 100vh; }

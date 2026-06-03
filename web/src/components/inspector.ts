@@ -13,7 +13,8 @@ export class Inspector extends LitElement {
   @property() selectedAt?: string
 
   static styles = css`
-    :host { display: block; height: 100%; overflow: auto; }
+    /* The enclosing column .body owns scroll; this host just flows. */
+    :host { display: block; }
     .empty { color: var(--fg-faint); padding: 12px; }
     .hdr {
       color: var(--fg-dim);
