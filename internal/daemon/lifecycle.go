@@ -46,7 +46,7 @@ type lifecycle struct {
 	spawn    func()                 // fork a detached `hv daemon start`
 	signal   func(pid int, sig syscall.Signal) error
 	alive    func(pid int) bool // is pid a live process?
-	serve    func(port int) int  // blocking foreground server (start's body)
+	serve    func(port int) int // blocking foreground server (start's body)
 
 	out  io.Writer
 	errw io.Writer
