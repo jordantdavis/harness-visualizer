@@ -172,6 +172,35 @@ do
 done
 
 # ---------------------------------------------------------------------------
+# Step 5b — DELETE /api/sessions/{id} (web UI delete, backed by the daemon)
+# ---------------------------------------------------------------------------
+printf '==> testing: DELETE /api/sessions/{id}\n'
+
+# Capture a second, independent session we can delete without disturbing the
+# primary smoke-test session that later steps assert on.
+printf '{"hook_event_name":"SessionStart","session_id":"smoke-del","cwd":"/tmp"}' \
+  | "$BIN" hook
+sleep 0.3
+
+DEL_FILE="$DATA_DIR/sessions/smoke-del.jsonl"
+[[ -f "$DEL_FILE" ]] || fail "second session file not created: $DEL_FILE"
+pass "second session (smoke-del) captured"
+
+API="http://127.0.0.1:$DAEMON_PORT/api/sessions"
+
+# DELETE the second session; expect 204 and the file gone.
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$API/smoke-del")"
+[[ "$CODE" == "204" ]] || fail "DELETE smoke-del returned $CODE (want 204)"
+[[ ! -f "$DEL_FILE" ]] || fail "smoke-del.jsonl still present after DELETE"
+[[ -f "$SESSION_FILE" ]] || fail "DELETE smoke-del also removed the primary session file"
+pass "DELETE removed smoke-del and left smoke-test intact"
+
+# Deleting a now-missing id is idempotent (still 204, never 500).
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "$API/smoke-del")"
+[[ "$CODE" == "204" ]] || fail "idempotent DELETE returned $CODE (want 204)"
+pass "DELETE of a missing session is idempotent (204)"
+
+# ---------------------------------------------------------------------------
 # Step 6 — sessions clear
 # ---------------------------------------------------------------------------
 printf '==> testing: hv sessions clear\n'

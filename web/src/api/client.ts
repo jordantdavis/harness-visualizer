@@ -18,4 +18,11 @@ export const api = {
     getJSON<OperationDetail>(
       `/api/sessions/${encodeURIComponent(id)}/operations/${encodeURIComponent(opId)}`,
     ),
+  deleteSession: async (id: string): Promise<void> => {
+    const url = `/api/sessions/${encodeURIComponent(id)}`
+    const resp = await fetch(url, { method: 'DELETE' })
+    if (!resp.ok) {
+      throw new Error(`${url}: HTTP ${resp.status}`)
+    }
+  },
 }

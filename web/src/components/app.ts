@@ -61,6 +61,9 @@ export class App extends LitElement {
     this.addEventListener('select-session', (e: Event) => {
       void this.selectSession((e as CustomEvent<string>).detail)
     })
+    this.addEventListener('delete-session', (e: Event) => {
+      void this.deleteSession((e as CustomEvent<string>).detail)
+    })
     this.addEventListener('select-op', (e: Event) => {
       void this.selectOp((e as CustomEvent<string>).detail)
     })
@@ -96,6 +99,29 @@ export class App extends LitElement {
     await this.refreshTimeline()
     this.stream.connect(id)
     this.live = true
+  }
+
+  private async deleteSession(id: string) {
+    try {
+      await api.deleteSession(id)
+    } catch {
+      this.daemonOk = false
+      return
+    }
+    // Optimistically drop the row; if the deleted session was open, clear the
+    // timeline/inspector and stop the live stream.
+    this.sessions = this.sessions.filter((s) => s.id !== id)
+    if (this.selectedSessionId === id) {
+      this.selectedSessionId = ''
+      this.items = []
+      this.selectedOpId = ''
+      this.detail = undefined
+      this.selectedAt = undefined
+      this.stream.disconnect()
+      this.live = false
+    }
+    // Refetch to stay authoritative with the daemon.
+    void this.loadSessions()
   }
 
   private async refreshTimeline() {

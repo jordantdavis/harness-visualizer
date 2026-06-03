@@ -8,6 +8,7 @@ package store
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +19,13 @@ import (
 	"jordandavis.dev/harness-visualizer/internal/event"
 	"jordandavis.dev/harness-visualizer/internal/paths"
 )
+
+// ErrInvalidSessionID is returned by Delete when the given id is not safe to
+// resolve to a file directly inside the sessions directory (empty, contains a
+// path separator, traversal, or any character sanitization would rewrite).
+// Callers should treat it as a client error (e.g. HTTP 400), not a server
+// fault — no disk is touched.
+var ErrInvalidSessionID = errors.New("store: invalid session id")
 
 // transcriptCacheKey uniquely identifies a cached transcript parse by file
 // path and modification time.
@@ -382,6 +390,58 @@ func rawStringField(raw json.RawMessage, field string) string {
 		return ""
 	}
 	return s
+}
+
+// Delete removes a single session's JSONL file from disk and drops any
+// in-process writer state for it. Because the daemon holds a live append
+// handle per session, an out-of-process unlink would leak writes to the freed
+// inode; doing the delete in-process lets us Close() and forget the handle
+// under s.mu before unlinking, so a delete is consistent even while capture is
+// live. Re-capturing the same id afterward opens a fresh file with a reset
+// seq.
+//
+// The id must satisfy paths.SafeSessionID — anything else is rejected with
+// ErrInvalidSessionID without touching disk. Deleting a session whose file is
+// already absent is not an error (idempotent).
+func (s *Store) Delete(sessionID string) error {
+	if !paths.SafeSessionID(sessionID) {
+		return ErrInvalidSessionID
+	}
+	path := filepath.Join(s.dir, paths.SessionFilename(sessionID))
+
+	// Capture the transcript path (if any) before we remove the file so we can
+	// evict its cache entries afterward. Best-effort: a scan failure just means
+	// no eviction.
+	transcriptPath := ""
+	if sr, err := scanSession(path); err == nil {
+		transcriptPath = sr.transcriptPath
+	}
+
+	// Close the live handle, drop writer state, and unlink — all under s.mu so
+	// a concurrent Append cannot recreate the file between the unlink and the
+	// map cleanup.
+	s.mu.Lock()
+	if f, ok := s.files[sessionID]; ok {
+		_ = f.Close()
+		delete(s.files, sessionID)
+	}
+	delete(s.seq, sessionID)
+	err := os.Remove(path)
+	s.mu.Unlock()
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+
+	if transcriptPath != "" {
+		s.transcriptMu.Lock()
+		for k := range s.transcriptCache {
+			if k.path == transcriptPath {
+				delete(s.transcriptCache, k)
+			}
+		}
+		s.transcriptMu.Unlock()
+	}
+	return nil
 }
 
 // Close flushes and closes all open session handles.

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -241,6 +243,103 @@ func TestAPIHooks_MethodNotAllowed(t *testing.T) {
 	srv.ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status %d, want 405", rec.Code)
+	}
+}
+
+// newTestServerInDir builds a Server over a store rooted at dir (so tests can
+// inspect or perturb the on-disk session files) and appends the given events.
+func newTestServerInDir(t *testing.T, dir string, events ...*event.Event) *Server {
+	t.Helper()
+	st, err := store.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	for _, e := range events {
+		if err := st.Append(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return NewServer(st)
+}
+
+// TestAPISessionDelete_RemovesFile verifies DELETE returns 204 and the backing
+// .jsonl file is gone from the sessions dir.
+func TestAPISessionDelete_RemovesFile(t *testing.T) {
+	dir := t.TempDir()
+	srv := newTestServerInDir(t, dir, &event.Event{SessionID: "s1", HookEvent: "Stop", Raw: []byte(`{}`)})
+	path := filepath.Join(dir, "s1.jsonl")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("precondition: session file missing: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/s1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status %d, want 204 (body=%s)", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("file still present after DELETE (err=%v)", err)
+	}
+}
+
+// TestAPISessionDelete_MissingIsIdempotent: deleting an unknown id is graceful
+// (204, no 500).
+func TestAPISessionDelete_MissingIsIdempotent(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/ghost", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("status %d, want 204", rec.Code)
+	}
+}
+
+// TestAPISessionDelete_InvalidID: a non-safe id is rejected with 400.
+func TestAPISessionDelete_InvalidID(t *testing.T) {
+	srv := newTestServer(t)
+	// "a.b" contains a dot, which sanitization would rewrite -> rejected.
+	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/a.b", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status %d, want 400", rec.Code)
+	}
+}
+
+// TestAPISessionDelete_MethodNotAllowed: a non-DELETE method on the bare-id
+// path returns 405.
+func TestAPISessionDelete_MethodNotAllowed(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/s1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status %d, want 405", rec.Code)
+	}
+}
+
+// TestAPISessionDelete_StoreErrorIs500: a real store failure (here: an
+// unwritable sessions dir, so os.Remove fails with a permission error) surfaces
+// as 500, not 204.
+func TestAPISessionDelete_StoreErrorIs500(t *testing.T) {
+	dir := t.TempDir()
+	srv := newTestServerInDir(t, dir, &event.Event{SessionID: "s1", HookEvent: "Stop", Raw: []byte(`{}`)})
+
+	// Removing a file requires write permission on its parent directory. Strip
+	// it so os.Remove returns a non-NotExist error.
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) }) // let t.TempDir clean up
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/sessions/s1", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("status %d, want 500 (body=%s)", rec.Code, rec.Body.String())
 	}
 }
 
