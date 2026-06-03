@@ -39,10 +39,18 @@ ships a tracked `.gitkeep` so `go:embed` always has something, and the binary se
 
 ## Architecture: one binary, three roles
 
-`cmd/hv/main.go` is pure subcommand dispatch. Each role is a package exposing `Run(args []string) int`:
+`cmd/hv/main.go` collapses to `os.Exit(cli.Execute())`. All CLI wiring lives in
+**`internal/cli`** (Cobra): `Execute()` builds the root command and attaches one subcommand
+per role, each role package still exposing `Run(args []string) int` as a stable, testable
+seam. Cobra owns flag definitions, `--help`, and shell completions; each subcommand's `RunE`
+reconstructs the args and delegates to its role package, translating the int exit code via an
+`exitError` carrier (`internal/cli/cli.go`). The hook hot path is protected by an outer
+`recover()` + always-exit-0 in `runRoot`, gated on the invocation being `hv hook`, so Cobra's
+own failure modes (flag parsing, init panics) can never break the per-event path. `hv version`
+(`runtime/debug.ReadBuildInfo`) and `hv completion <shell>` ship for free.
 
 - **`hv hook`** (`internal/client`) — the hook forwarder. Claude Code runs this **per hook
-  event** (also the bare `hv` invocation). It reads the hook payload from stdin, enriches it
+  event**. It reads the hook payload from stdin, enriches it
   into an `event.Event`, and POSTs to the daemon. **Hard constraints: always exits 0, bounded
   to ~100ms total, swallows all errors, writes nothing to stdout.** The hook path must never
   block or break Claude Code. If the POST hits connection-refused, it auto-spawns the daemon
@@ -110,7 +118,8 @@ wipes the tracked `.gitkeep`, so `make web` / the npm `postbuild` step recreates
 
 - **Always exit 0 / degrade gracefully**: the hook path never fails, and transcript/timeline
   parsing tolerates missing or foreign data rather than erroring. Preserve this.
-- Each role package exposes a `Run(args) int`; `main` stays pure dispatch.
+- Each role package exposes a `Run(args) int`; CLI wiring lives in `internal/cli` (Cobra) and
+  `main` stays a one-line `os.Exit(cli.Execute())`.
 - Heavy state is injected (store dir, daemon spawn fn, browser-open fn) so packages are
   testable against temp dirs and fakes — follow this when extending.
 - Tests live beside code (`*_test.go`, `*.test.ts`) and are the norm; mirror existing test

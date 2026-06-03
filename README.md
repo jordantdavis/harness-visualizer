@@ -14,6 +14,10 @@ One binary (`hv`), three roles:
 - `hv daemon` — HTTP capture server; auto-spawned by the first hook, you don't normally start it
 - `hv serve` — opens the web UI in a browser (ensures the daemon is up first)
 
+Plus `hv version`, `hv completion <shell>`, and `hv sessions clear`. Run `hv` with no
+arguments (or `hv --help`) to see the full command tree. The CLI is built on
+[Cobra](https://github.com/spf13/cobra), so every command supports `--help`.
+
 Events land as JSONL under `$XDG_DATA_HOME/hv/sessions/{session_id}.jsonl`
 (override with `HV_DATA_DIR`). Runtime files (port, pid, daemon log) live under
 `$XDG_RUNTIME_DIR/hv/` or fall back to the data dir. Default daemon port: **7842**.
@@ -113,3 +117,22 @@ Delete all captured session JSONL files (prompts for confirmation; use `--yes` t
 ```bash
 hv sessions clear
 ```
+
+Print version information (commit + build time, via `runtime/debug.ReadBuildInfo`):
+
+```bash
+hv version
+```
+
+Shell completions (bash/zsh/fish/powershell):
+
+```bash
+hv completion zsh > "${fpath[1]}/_hv"      # zsh
+hv completion bash > /etc/bash_completion.d/hv   # bash
+hv completion fish > ~/.config/fish/completions/hv.fish   # fish
+```
+
+> **Note:** bare `hv` (no subcommand) now prints help and exits 0. The hook
+> forwarder is `hv hook` — the bundled plugin already calls it explicitly, so
+> existing installs are unaffected. If you hand-wired bare `hv` into a hook
+> config, switch it to `hv hook`.
