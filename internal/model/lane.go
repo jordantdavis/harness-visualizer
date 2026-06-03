@@ -225,4 +225,3 @@ func firstStringField(raw json.RawMessage) string {
 	}
 	return ""
 }
-

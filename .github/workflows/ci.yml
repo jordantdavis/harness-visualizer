@@ -1,0 +1,77 @@
+name: CI
+
+# Run on PRs targeting main and on merges/pushes into main.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs for the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (CLI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting (gofmt)
+        run: |
+          unformatted=$(git ls-files '*.go' | xargs gofmt -l)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:" >&2
+            echo "$unformatted" >&2
+            echo "Run: git ls-files '*.go' | xargs gofmt -w" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
+
+      # Build with whatever is currently embedded in internal/web/dist
+      # (the tracked .gitkeep is enough for go:embed); the real bundle is
+      # produced by `make build`, exercised by the web job below.
+      - name: Build
+        run: go build ./cmd/hv
+
+  web:
+    name: Web (frontend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # `npm run build` runs `tsc --noEmit` (typecheck) then `vite build`.
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm run test

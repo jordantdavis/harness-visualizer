@@ -22,8 +22,8 @@ const (
 // HookMeta is the per-hook rendering metadata both clients share.
 type HookMeta struct {
 	Name     string `json:"name"`
-	Glyph    string `json:"glyph"`    // single display cell
-	Label    string `json:"label"`    // ≤16 chars
+	Glyph    string `json:"glyph"` // single display cell
+	Label    string `json:"label"` // ≤16 chars
 	Lane     Lane   `json:"lane"`
 	Severity string `json:"severity"` // info | warn | error | dim
 }
