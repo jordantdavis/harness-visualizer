@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -257,6 +258,119 @@ func TestSessionsStartedAtIsFirstEventCapturedAt(t *testing.T) {
 	}
 	if !infos[0].StartedAt.Equal(t1) {
 		t.Errorf("StartedAt = %v, want %v (first event's CapturedAt)", infos[0].StartedAt, t1)
+	}
+}
+
+// TestSessionsLastActivityIsLastEventCapturedAt verifies LastActivity reflects
+// the CapturedAt of the latest event, not the first.
+func TestSessionsLastActivityIsLastEventCapturedAt(t *testing.T) {
+	s := newTestStore(t)
+	t1 := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	t2 := t1.Add(5 * time.Second)
+
+	_ = s.Append(&event.Event{SessionID: "sess", HookEvent: "A", CapturedAt: t1})
+	_ = s.Append(&event.Event{SessionID: "sess", HookEvent: "B", CapturedAt: t2})
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	if len(infos) != 1 {
+		t.Fatalf("got %d sessions, want 1", len(infos))
+	}
+	if !infos[0].LastActivity.Equal(t2) {
+		t.Errorf("LastActivity = %v, want %v (last event's CapturedAt)", infos[0].LastActivity, t2)
+	}
+}
+
+// TestSessionsOrderedByMostRecentActivityDesc verifies sessions are returned
+// newest-activity-first based on the last event's CapturedAt.
+func TestSessionsOrderedByMostRecentActivityDesc(t *testing.T) {
+	s := newTestStore(t)
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	// alpha: last activity base+10s
+	_ = s.Append(&event.Event{SessionID: "alpha", HookEvent: "A", CapturedAt: base})
+	_ = s.Append(&event.Event{SessionID: "alpha", HookEvent: "B", CapturedAt: base.Add(10 * time.Second)})
+	// beta: last activity base+30s (newest)
+	_ = s.Append(&event.Event{SessionID: "beta", HookEvent: "C", CapturedAt: base.Add(30 * time.Second)})
+	// gamma: last activity base+20s
+	_ = s.Append(&event.Event{SessionID: "gamma", HookEvent: "D", CapturedAt: base.Add(20 * time.Second)})
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	var got []string
+	for _, in := range infos {
+		got = append(got, in.ID)
+	}
+	want := []string{"beta", "gamma", "alpha"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("order = %v, want %v (most recent activity first)", got, want)
+	}
+}
+
+// TestSessionsTieBreakByIDAscending verifies equal activity times break by ID
+// ascending so order is deterministic and stable across calls.
+func TestSessionsTieBreakByIDAscending(t *testing.T) {
+	s := newTestStore(t)
+	ts := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	for _, id := range []string{"ccc", "aaa", "bbb"} {
+		_ = s.Append(&event.Event{SessionID: id, HookEvent: "X", CapturedAt: ts})
+	}
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	var got []string
+	for _, in := range infos {
+		got = append(got, in.ID)
+	}
+	want := []string{"aaa", "bbb", "ccc"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tie order = %v, want %v (ID ascending)", got, want)
+	}
+}
+
+// TestSessionsZeroActivityFallsBackToModTime verifies that session files with
+// no parseable events (LastActivity zero) sort by file mtime, newest first,
+// without errors.
+func TestSessionsZeroActivityFallsBackToModTime(t *testing.T) {
+	dir := t.TempDir()
+	s, err := New(dir)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	defer s.Close()
+
+	older := filepath.Join(dir, "older.jsonl")
+	newer := filepath.Join(dir, "newer.jsonl")
+	if err := os.WriteFile(older, []byte("not json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if err := os.WriteFile(newer, []byte("also not json\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(older, t0, t0); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+	if err := os.Chtimes(newer, t0.Add(time.Hour), t0.Add(time.Hour)); err != nil {
+		t.Fatalf("Chtimes: %v", err)
+	}
+
+	infos, err := s.Sessions()
+	if err != nil {
+		t.Fatalf("Sessions: %v", err)
+	}
+	var got []string
+	for _, in := range infos {
+		got = append(got, in.ID)
+	}
+	want := []string{"newer", "older"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fallback order = %v, want %v (newer mtime first)", got, want)
 	}
 }
 

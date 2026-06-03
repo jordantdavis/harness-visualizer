@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -148,6 +149,11 @@ type SessionInfo struct {
 	// StartedAt is the CapturedAt of the first valid event in the session.
 	// Zero when the session file is empty or contains no parseable events.
 	StartedAt time.Time `json:"started_at"`
+	// LastActivity is the CapturedAt of the last valid event in the session —
+	// the sort key for "most recent activity". Zero when the session file is
+	// empty or contains no parseable events, in which case ModTime is used as a
+	// fallback for ordering.
+	LastActivity time.Time `json:"last_activity"`
 
 	// CWD is the working directory captured from the session's events
 	// (Phase 8d). project = filepath.Base(CWD). Empty when unknown.
@@ -183,11 +189,12 @@ func (s *Store) Sessions() ([]SessionInfo, error) {
 			id = strings.TrimSuffix(e.Name(), ".jsonl")
 		}
 		info := SessionInfo{
-			ID:         id,
-			EventCount: sr.count,
-			LastSeq:    sr.last,
-			StartedAt:  sr.startedAt,
-			CWD:        sr.cwd,
+			ID:           id,
+			EventCount:   sr.count,
+			LastSeq:      sr.last,
+			StartedAt:    sr.startedAt,
+			LastActivity: sr.lastActivity,
+			CWD:          sr.cwd,
 		}
 		if fi, err := e.Info(); err == nil {
 			info.ModTime = fi.ModTime()
@@ -195,7 +202,28 @@ func (s *Store) Sessions() ([]SessionInfo, error) {
 		info.Title = s.resolveTitle(id, sr)
 		infos = append(infos, info)
 	}
+
+	// Order by most recent activity, newest first. "Activity" is the last
+	// event's CapturedAt, falling back to the file's ModTime when no event
+	// carried a timestamp. Ties (including both-zero) break by ID ascending so
+	// the order is fully deterministic and stable across reloads.
+	sort.Slice(infos, func(i, j int) bool {
+		ai, aj := effectiveActivity(infos[i]), effectiveActivity(infos[j])
+		if !ai.Equal(aj) {
+			return ai.After(aj)
+		}
+		return infos[i].ID < infos[j].ID
+	})
 	return infos, nil
+}
+
+// effectiveActivity returns the timestamp used to order a session: the last
+// event's CapturedAt, or the file ModTime when no event carried a timestamp.
+func effectiveActivity(info SessionInfo) time.Time {
+	if !info.LastActivity.IsZero() {
+		return info.LastActivity
+	}
+	return info.ModTime
 }
 
 // resolveTitle applies the fallback chain to produce a non-blank title for a
@@ -267,6 +295,7 @@ type scanResult struct {
 	count           int64     // number of valid events
 	last            int64     // max Seq observed
 	startedAt       time.Time // CapturedAt of the first valid event; zero when absent
+	lastActivity    time.Time // CapturedAt of the last valid event; zero when absent
 	cwd             string    // first non-empty cwd (event.CWD preferred, Raw.cwd fallback)
 	transcriptPath  string    // last non-empty transcript_path from Raw
 	firstUserPrompt string    // prompt from the first UserPromptSubmit event
@@ -301,6 +330,9 @@ func scanSession(path string) (scanResult, error) {
 		}
 		if sr.count == 0 && !ev.CapturedAt.IsZero() {
 			sr.startedAt = ev.CapturedAt
+		}
+		if !ev.CapturedAt.IsZero() {
+			sr.lastActivity = ev.CapturedAt
 		}
 		sr.count++
 		if ev.Seq > sr.last {

@@ -5,6 +5,11 @@ export interface SessionInfo {
   mod_time: string
   /** ISO 8601 timestamp of the first captured event. Empty string when unknown. */
   started_at: string
+  /**
+   * ISO 8601 timestamp of the last captured event — the server-side sort key
+   * ("most recent activity, newest first"). Empty string when unknown.
+   */
+  last_activity: string
   cwd?: string
   title?: string
 }
