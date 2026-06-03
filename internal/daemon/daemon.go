@@ -7,7 +7,6 @@ package daemon
 import (
 	"context"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -360,23 +359,23 @@ func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
 
 // ---- Run entrypoint ----
 
-// Run is the CLI entrypoint for `hv daemon`. args should not include the
-// subcommand name. Returns an OS exit code (0 = success).
-//
-// Flags:
-//
-//	--foreground  (bool, default true) run in foreground; ignored — always serves in-process
-//	--port        (int,  default 7842) preferred listen port; falls back to :0 on EADDRINUSE
+// Run is the CLI entrypoint for `hv daemon`. args is everything after "daemon"
+// on the command line, beginning with a verb (start/stop/restart/status). It
+// builds a lifecycle wired to the real primitives and dispatches; see
+// lifecycle.go for the per-verb logic. Returns an OS exit code (0 = success).
 func Run(args []string) int {
-	fs := flag.NewFlagSet("daemon", flag.ContinueOnError)
-	foreground := fs.Bool("foreground", true, "run in foreground (always true; detach is the hook CLI's job)")
-	port := fs.Int("port", defaultPort, "preferred listen port")
-	if err := fs.Parse(args); err != nil {
-		fmt.Fprintln(os.Stderr, "daemon: "+err.Error())
-		return 1
-	}
-	_ = foreground // detach is the hook CLI's responsibility
+	return newLifecycle().dispatch(args)
+}
 
+// serveForeground binds the preferred port and runs the HTTP server in-process
+// until SIGINT/SIGTERM, then shuts down cleanly. It is the body of
+// `hv daemon start` and the process the hook auto-spawn runs under Setsid.
+//
+// There is deliberately NO ephemeral-port fallback: if the preferred port is
+// taken, we return a non-zero exit rather than silently binding elsewhere. The
+// single-daemon invariant is enforced by `start`'s already-healthy refuse plus
+// this hard bind failure, so two daemons can never quietly coexist.
+func serveForeground(port int) int {
 	sessDir, err := paths.SessionsDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "daemon: sessions dir: "+err.Error())
@@ -402,17 +401,10 @@ func Run(args []string) int {
 
 	srv := NewServer(st)
 
-	// Try preferred port; fall back to ephemeral on EADDRINUSE.
-	preferredAddr := fmt.Sprintf("127.0.0.1:%d", *port)
-	addr, err := srv.ListenAndServe(preferredAddr, portFile, pidFile)
+	addr, err := srv.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), portFile, pidFile)
 	if err != nil {
-		if isAddrInUse(err) {
-			addr, err = srv.ListenAndServe("127.0.0.1:0", portFile, pidFile)
-		}
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "daemon: listen: "+err.Error())
-			return 1
-		}
+		fmt.Fprintln(os.Stderr, "daemon: listen: "+err.Error())
+		return 1
 	}
 
 	fmt.Fprintf(os.Stdout, "hv daemon listening on %s\n", addr)
@@ -425,14 +417,4 @@ func Run(args []string) int {
 	srv.Shutdown()
 	_ = st.Close()
 	return 0
-}
-
-// isAddrInUse returns true when err wraps EADDRINUSE.
-func isAddrInUse(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "address already in use") ||
-		strings.Contains(err.Error(), "bind: address already in use") ||
-		strings.Contains(err.Error(), "listen tcp")
 }

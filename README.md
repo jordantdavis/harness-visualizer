@@ -11,7 +11,7 @@ the captured event stream is reality. This is a reality-viewer.
 One binary (`hv`), three roles:
 
 - `hv hook` — hook forwarder; Claude Code runs this per hook event (reads stdin, POSTs to daemon, exits 0 always, <100ms)
-- `hv daemon` — HTTP capture server; auto-spawned by the first hook, you don't normally start it
+- `hv daemon` — manage the HTTP capture server: `start` | `stop` | `restart` | `status`; auto-spawned by the first hook, so you don't normally start it by hand
 - `hv serve` — opens the web UI in a browser (ensures the daemon is up first)
 
 Plus `hv version`, `hv completion <shell>`, and `hv sessions clear`. Run `hv` with no
@@ -106,11 +106,17 @@ Debug hook forwarding (verbose stderr):
 HV_DEBUG=1 hv hook < /dev/stdin
 ```
 
-Run daemon in the foreground (dev/debug mode):
+Manage the daemon directly (dev/debug):
 
 ```bash
-hv daemon --foreground
+hv daemon start            # run the server in the foreground (Ctrl-C to stop)
+hv daemon status           # is a daemon healthy? prints pid/port/url; exit 0/1
+hv daemon stop             # SIGTERM the running daemon (SIGKILL fallback)
+hv daemon restart          # bounce it and return to the shell
 ```
+
+`start` blocks (it *is* the server); `restart` returns once a freshly detached
+daemon is healthy. `start` refuses if a healthy daemon already owns the port.
 
 Delete all captured session JSONL files (prompts for confirmation; use `--yes` to skip):
 

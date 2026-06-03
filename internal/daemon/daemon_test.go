@@ -670,17 +670,20 @@ func TestGetSessionsIncludesCWDAndTitle(t *testing.T) {
 	}
 }
 
-// --- Run entrypoint smoke test ---
+// --- Run entrypoint dispatch ---
 
-func TestRunForegroundFlagParsed(t *testing.T) {
-	// Run with --foreground + auto-assigned port; should start serving and
-	// return exit 0 when we cancel via the server's own shutdown path.
-	// We just verify Run is callable with the flag without panicking.
-	// (A full blocking test would require goroutine + signal tricks.)
-	// Instead we use the --help-like approach: invalid flag should return non-zero.
-	code := daemon.Run([]string{"--unknown-flag-xyz"})
-	if code == 0 {
-		t.Error("Run with unknown flag should return non-zero exit code")
+// TestRunBareExitsNonZero verifies bare `hv daemon` (no verb) prints usage and
+// exits non-zero. The per-verb logic is covered by lifecycle_test.go against
+// fakes; here we only confirm Run wires through to the dispatcher.
+func TestRunBareExitsNonZero(t *testing.T) {
+	if code := daemon.Run(nil); code == 0 {
+		t.Error("bare daemon Run should return non-zero exit code")
+	}
+}
+
+func TestRunUnknownVerbExitsTwo(t *testing.T) {
+	if code := daemon.Run([]string{"--unknown-flag-xyz"}); code != 2 {
+		t.Errorf("Run with unknown verb = %d, want 2", code)
 	}
 }
 

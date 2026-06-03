@@ -95,38 +95,68 @@ func TestVersionPrintsExpectedFormat(t *testing.T) {
 	}
 }
 
-func TestDaemonFlagPropagates(t *testing.T) {
-	code, _, _, calls := runCLI(t, "daemon", "--port=8080")
+func TestDaemonStartFlagPropagates(t *testing.T) {
+	code, _, _, calls := runCLI(t, "daemon", "start", "--port=8080")
 	if code != 0 {
-		t.Fatalf("hv daemon --port=8080: exit code = %d, want 0", code)
+		t.Fatalf("hv daemon start --port=8080: exit code = %d, want 0", code)
 	}
 	if !calls.daemonCalled {
 		t.Fatal("daemon.Run was not called")
 	}
 	joined := strings.Join(calls.daemonArgs, " ")
+	if !strings.HasPrefix(joined, "start") {
+		t.Fatalf("daemon args should lead with the verb: %v", calls.daemonArgs)
+	}
 	if !strings.Contains(joined, "--port=8080") {
 		t.Fatalf("daemon args missing port: %v", calls.daemonArgs)
 	}
 }
 
-func TestDaemonDefaultPort(t *testing.T) {
-	_, _, _, calls := runCLI(t, "daemon")
+func TestDaemonStartDefaultPort(t *testing.T) {
+	_, _, _, calls := runCLI(t, "daemon", "start")
 	if !calls.daemonCalled {
 		t.Fatal("daemon.Run was not called")
 	}
 	if !strings.Contains(strings.Join(calls.daemonArgs, " "), "--port=7842") {
-		t.Fatalf("daemon default port not forwarded: %v", calls.daemonArgs)
+		t.Fatalf("daemon start default port not forwarded: %v", calls.daemonArgs)
 	}
 }
 
-func TestDaemonExitCodePropagates(t *testing.T) {
+// TestDaemonVerbsForwarded covers the stop/restart/status children: each
+// forwards exactly its verb (no flags) to daemonRun.
+func TestDaemonVerbsForwarded(t *testing.T) {
+	for _, verb := range []string{"stop", "restart", "status"} {
+		_, _, _, calls := runCLI(t, "daemon", verb)
+		if !calls.daemonCalled {
+			t.Fatalf("daemon %s: daemon.Run was not called", verb)
+		}
+		if got := strings.Join(calls.daemonArgs, " "); got != verb {
+			t.Errorf("daemon %s forwarded %q, want %q", verb, got, verb)
+		}
+	}
+}
+
+func TestDaemonBareExitsNonZero(t *testing.T) {
+	// Bare `hv daemon` forwards empty args; the fake returns its daemonCode
+	// (0 by default). With the real seam this is 2; here we just assert the
+	// parent forwards through rather than erroring in cobra.
+	_, _, _, calls := runCLI(t, "daemon")
+	if !calls.daemonCalled {
+		t.Fatal("bare daemon should forward to daemon.Run")
+	}
+	if len(calls.daemonArgs) != 0 {
+		t.Errorf("bare daemon should forward no verb, got %v", calls.daemonArgs)
+	}
+}
+
+func TestDaemonStartExitCodePropagates(t *testing.T) {
 	calls := installFakes(t)
 	calls.daemonCode = 1
 	root := newRootCmd()
 	root.SetOut(&bytes.Buffer{})
 	root.SetErr(&bytes.Buffer{})
-	if code := runRoot(root, []string{"daemon"}, false); code != 1 {
-		t.Fatalf("daemon exit code = %d, want 1 (propagated from daemon.Run)", code)
+	if code := runRoot(root, []string{"daemon", "start"}, false); code != 1 {
+		t.Fatalf("daemon start exit code = %d, want 1 (propagated from daemon.Run)", code)
 	}
 }
 

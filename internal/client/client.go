@@ -127,6 +127,16 @@ func run(stdin io.Reader, addr string, stdout io.Writer, spawnFn func()) int {
 	return 0
 }
 
+// DaemonHealthy is the exported form of daemonHealthy, reused by the daemon
+// lifecycle commands (`hv daemon status|stop|restart|start`) as the
+// authoritative liveness check (a stale pidfile is not trusted on its own).
+func DaemonHealthy(addr string) bool { return daemonHealthy(addr) }
+
+// SpawnDaemon is the exported form of spawnDaemon: it forks a fully detached
+// `hv daemon start`. Reused by `hv daemon restart` so the bounced daemon is
+// spawned exactly the way the hook auto-spawn does.
+func SpawnDaemon() { spawnDaemon() }
+
 // resolveAddr reads the port file and returns "127.0.0.1:<port>". Falls back
 // to the default port when the file is missing, empty, or unreadable.
 func resolveAddr() string {
@@ -195,7 +205,7 @@ func spawnDaemon() {
 		Sys:   &syscall.SysProcAttr{Setsid: true},
 	}
 
-	proc, err := os.StartProcess(exe, []string{exe, "daemon"}, procAttr)
+	proc, err := os.StartProcess(exe, []string{exe, "daemon", "start"}, procAttr)
 	if err != nil {
 		debug.Printf("spawn daemon: %v", err)
 		if logFile != nil {

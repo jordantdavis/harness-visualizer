@@ -2,7 +2,7 @@
 // several roles, selected by subcommand:
 //
 //	hv hook          forward one hook payload (stdin) to the daemon
-//	hv daemon        long-running HTTP server + SSE hub (--foreground for dev)
+//	hv daemon        manage the capture daemon: start | stop | restart | status
 //	hv serve         ensure the daemon is up and open the web UI in a browser
 //	hv sessions      manage captured sessions (see: hv sessions clear)
 //	hv version       print version information
