@@ -55,10 +55,17 @@ own failure modes (flag parsing, init panics) can never break the per-event path
   to ~100ms total, swallows all errors, writes nothing to stdout.** The hook path must never
   block or break Claude Code. If the POST hits connection-refused, it auto-spawns the daemon
   once. Treat this critical path as sacred — keep it tiny and panic-safe.
-- **`hv daemon`** (`internal/daemon`) — long-running HTTP capture server + SSE hub. Receives
-  events via POST, persists via a per-session writer goroutine (`internal/store`), and fans
-  out live to SSE subscribers (`hub`). Auto-spawned by the first hook; users don't normally
-  start it (`--foreground` / `--port` for dev). The `Server` value is the testable unit.
+- **`hv daemon <verb>`** (`internal/daemon`) — long-running HTTP capture server + SSE hub plus
+  its lifecycle commands. Receives events via POST, persists via a per-session writer goroutine
+  (`internal/store`), and fans out live to SSE subscribers (`hub`). `Run` is a verb dispatcher
+  (`lifecycle.go`) over `start` (the in-process foreground server, `--port`;
+  hard-refuses if a healthy daemon already owns the port — no `:0` fallback), `stop`
+  (SIGTERM→SIGKILL the pidfile PID), `restart` (tolerant stop + detached re-spawn + poll), and
+  `status` (pid/port/url, exit 0/1). Liveness is `GET /healthz` against the **port-file** port,
+  never a default-port fallback (so an unrelated daemon on 7842 can't cause false positives);
+  signal/process code is Unix-only and build-tagged (`proc_unix.go`). Auto-spawned (`daemon
+  start`) by the first hook; users don't normally start it by hand. The `Server` value and the
+  injectable `lifecycle` are the testable units.
 - **`hv serve`** (`internal/serve`) — thin launcher: ensures the daemon is up, then opens the
   browser at the daemon's embedded web UI. It is **not** a second server — the daemon serves
   the UI at `/`.

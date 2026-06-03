@@ -48,15 +48,16 @@ pass "build"
 #           An explicit start isolates the test from any daemon already
 #           running on the default port (7842) from a live Claude Code session.
 # ---------------------------------------------------------------------------
-printf '==> starting daemon (foreground, port 0)\n'
+printf '==> starting daemon (hv daemon start, port 0)\n'
 export HV_DATA_DIR="$DATA_DIR"
 
 # Spawn daemon in background; capture its PID for cleanup.
-"$BIN" daemon --foreground --port 0 >"$DATA_DIR/daemon.log" 2>&1 &
+"$BIN" daemon start --port 0 >"$DATA_DIR/daemon.log" 2>&1 &
 DAEMON_PID=$!
 
 # Wait for the daemon to write its port file (up to 3 s).
 PORT_FILE="$DATA_DIR/daemon.port"
+PID_FILE="$DATA_DIR/daemon.pid"
 for i in $(seq 1 30); do
   if [[ -s "$PORT_FILE" ]]; then
     break
@@ -66,6 +67,13 @@ done
 [[ -s "$PORT_FILE" ]] || fail "daemon did not write port file within 3s"
 DAEMON_PORT="$(cat "$PORT_FILE")"
 pass "daemon started on port $DAEMON_PORT"
+
+# hv daemon status should report healthy (exit 0).
+if "$BIN" daemon status >/dev/null 2>&1; then
+  pass "daemon status reports running (exit 0)"
+else
+  fail "daemon status exited non-zero while daemon is up"
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3 — First hook invocation (PreToolUse)
@@ -227,6 +235,33 @@ EXIT_CODE=$?
 [[ ! -f "$SESSION_FILE" ]] || fail "session file still exists after sessions clear --yes"
 [[ -f "$DECOY" ]] || fail "keep.txt was deleted by sessions clear (it should not be)"
 pass "sessions clear --yes removed JSONL and left non-jsonl decoy intact"
+
+# ---------------------------------------------------------------------------
+# Step 7 — daemon stop
+# ---------------------------------------------------------------------------
+printf '==> testing: hv daemon stop\n'
+
+"$BIN" daemon stop
+STOP_CODE=$?
+[[ $STOP_CODE -eq 0 ]] || fail "daemon stop exited $STOP_CODE (want 0)"
+DAEMON_PID="" # stopped cleanly; nothing left for cleanup to kill
+
+# Runtime files must be gone after a clean stop.
+[[ ! -f "$PID_FILE" ]] || fail "daemon.pid still exists after stop"
+[[ ! -f "$PORT_FILE" ]] || fail "daemon.port still exists after stop"
+pass "daemon stop removed pid/port files"
+
+# status must now report stopped (non-zero exit).
+if "$BIN" daemon status >/dev/null 2>&1; then
+  fail "daemon status reported running after stop"
+fi
+pass "daemon status reports stopped (non-zero exit)"
+
+# A second stop must hard-refuse (exit 1).
+if "$BIN" daemon stop >/dev/null 2>&1; then
+  fail "daemon stop on a dead daemon should exit non-zero"
+fi
+pass "daemon stop hard-refuses when nothing is running"
 
 # ---------------------------------------------------------------------------
 # Done
